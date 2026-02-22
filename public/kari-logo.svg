@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 360" fill="none">
+  <defs>
+    <clipPath id="outerClip">
+      <circle cx="150" cy="130" r="110"/>
+    </clipPath>
+  </defs>
+
+  <!-- Main circular body -->
+  <circle cx="150" cy="130" r="110" fill="#7D2A6E"/>
+
+  <!-- White inner circle (large cutout creating the C-shape) -->
+  <circle cx="165" cy="115" r="72" fill="white"/>
+
+  <!-- Purple inner circle (the eye/center) -->
+  <circle cx="165" cy="115" r="38" fill="#7D2A6E"/>
+
+  <!-- White small circle (pupil hole) -->
+  <circle cx="165" cy="108" r="24" fill="white"/>
+
+  <!-- Bottom tail/curl that extends down-right -->
+  <path d="M195 175 Q220 200 215 225 Q210 250 190 255 Q170 258 158 240 Q148 225 155 205 Q162 185 178 178 Z" fill="#7D2A6E"/>
+
+  <!-- kari wordmark -->
+  <text x="150" y="320" text-anchor="middle"
+    font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif"
+    font-size="72" font-weight="700" fill="#7D2A6E" letter-spacing="3">kari</text>
+</svg>

@@ -31,15 +31,21 @@ const PCT_COLUMNS = [
 
 function normalizeRow(obj) {
   const result = { ...obj };
-  PCT_COLUMNS.forEach(col => {
-    if (result[col] !== null && result[col] !== undefined) {
-      const n = parseFloat(result[col]);
-      if (!isNaN(n) && Math.abs(n) <= 1.5) {
+  // Apply PCT normalization to all columns whose names look like PCT columns
+  for (const key of Object.keys(result)) {
+    const keyNorm = key.toLowerCase().replace(/[,\.]/g, ' ').replace(/\s+/g, ' ').trim();
+    const isPct = PCT_COLUMNS.some(col => {
+      const colNorm = col.toLowerCase().replace(/[,\.]/g, ' ').replace(/\s+/g, ' ').trim();
+      return keyNorm === colNorm;
+    }) || key.endsWith('%') || key.includes(',%');
+    if (isPct && result[key] !== null && result[key] !== undefined) {
+      const n = parseFloat(result[key]);
+      if (!isNaN(n) && Math.abs(n) <= 1.5 && n !== 0) {
         // stored as fraction, convert to percent
-        result[col] = +(n * 100).toFixed(2);
+        result[key] = +(n * 100).toFixed(2);
       }
     }
-  });
+  }
   return result;
 }
 
@@ -146,6 +152,33 @@ function extractMeta(ws) {
 }
 
 /**
+ * Normalize a column key for fuzzy matching:
+ * - lowercase
+ * - remove extra spaces, commas, dots
+ * - trim
+ */
+function normalizeKey(k) {
+  return String(k)
+    .toLowerCase()
+    .replace(/[,\.]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Precomputed normalized key → original key cache per row (stored on row itself)
+const _normCache = new WeakMap();
+
+function getNormMap(row) {
+  if (_normCache.has(row)) return _normCache.get(row);
+  const map = {};
+  for (const k of Object.keys(row)) {
+    map[normalizeKey(k)] = k;
+  }
+  _normCache.set(row, map);
+  return map;
+}
+
+/**
  * Universal field getter — handles both "Отгружено, шт" and "Отгружено шт" naming
  */
 export function getField(row, key) {
@@ -156,6 +189,13 @@ export function getField(row, key) {
   // try without space after comma
   const alt2 = key.replace(', ', ',');
   if (row[alt2] !== undefined && row[alt2] !== null) return row[alt2];
+  // fuzzy match via normalization (handles any whitespace/comma variation)
+  const normMap = getNormMap(row);
+  const normKey = normalizeKey(key);
+  if (normMap[normKey] !== undefined) {
+    const v = row[normMap[normKey]];
+    if (v !== undefined && v !== null) return v;
+  }
   return null;
 }
 

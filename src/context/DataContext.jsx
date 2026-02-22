@@ -24,6 +24,13 @@ export function DataProvider({ children }) {
   const summaryData = mergeSummaryData(parsedFiles);
   const detailData = mergeDetailData(parsedFiles);
 
+  // Debug: log column names from first summary row to help diagnose zeros
+  if (summaryData.length > 0) {
+    console.log('[DataContext] Columns in first summary row:', Object.keys(summaryData[0]));
+    console.log('[DataContext] First summary row sample:', summaryData[0]);
+    console.log('[DataContext] Total summary rows:', summaryData.length);
+  }
+
   // All regions (for global KPIs and region breakdown)
   const allSummary = summaryData;
 

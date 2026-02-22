@@ -61,10 +61,10 @@ export default function Layout() {
             )}
             {/* KARI badge */}
             <div
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg"
+              className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg"
               style={{ backgroundColor: '#111827' }}
             >
-              <div className="w-4 h-4 rounded flex items-center justify-center text-white font-black text-xs" style={{ backgroundColor: '#E91E8C' }}>K</div>
+              <img src="/kari-logo.svg" alt="KARI" className="w-5 h-5 object-contain" style={{ filter: 'brightness(0) invert(1)' }} />
               <span className="text-xs font-bold text-white tracking-wider">КАРИ</span>
             </div>
           </div>

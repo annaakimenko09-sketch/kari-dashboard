@@ -35,15 +35,10 @@ export default function Sidebar({ open, onClose }) {
         style={{ backgroundColor: '#111827' }}
       >
         {/* Logo */}
-        <div className="flex items-center justify-between px-5 py-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
           <div className="flex items-center gap-3">
-            {/* KARI logo mark */}
-            <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 font-black text-white text-sm tracking-tight"
-              style={{ backgroundColor: '#E91E8C' }}
-            >
-              K
-            </div>
+            {/* KARI logo */}
+            <img src="/kari-logo.svg" alt="KARI" className="w-8 h-8 object-contain flex-shrink-0" style={{ filter: 'brightness(0) invert(1)' }} />
             <div>
               <div className="font-black text-white text-base tracking-wider leading-none">КАРИ</div>
               <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>Аналитика вывозов</div>
