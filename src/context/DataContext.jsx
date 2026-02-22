@@ -24,7 +24,10 @@ export function DataProvider({ children }) {
   const summaryData = mergeSummaryData(parsedFiles);
   const detailData = mergeDetailData(parsedFiles);
 
-  // Filter only СПБ and БЕЛ regions
+  // All regions (for global KPIs and region breakdown)
+  const allSummary = summaryData;
+
+  // Filter only СПБ and БЕЛ regions (for subdivision/store detail)
   const spbBelSummary = summaryData.filter(row => {
     const region = String(row['Регион'] || '').toUpperCase();
     return region.includes('СПБ') || region.includes('БЕЛ') || region.includes('SPB') || region.includes('BEL');
@@ -43,6 +46,7 @@ export function DataProvider({ children }) {
       loadFiles,
       summaryData,
       detailData,
+      allSummary,
       spbBelSummary,
       spbBelDetail,
     }}>

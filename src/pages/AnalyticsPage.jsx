@@ -15,14 +15,14 @@ function SectionTitle({ children }) {
 }
 
 export default function AnalyticsPage() {
-  const { spbBelSummary, parsedFiles } = useData();
+  const { spbBelSummary, allSummary, parsedFiles } = useData();
   const navigate = useNavigate();
   const [groupBy, setGroupBy] = useState('subdivision');
 
   const chartData = useMemo(() => {
-    if (!spbBelSummary.length) return {};
+    if (!allSummary.length) return {};
 
-    // By subdivision
+    // By subdivision — only SPB/BEL
     const subdivMap = {};
     spbBelSummary.forEach(r => {
       const key = r['Подразделение'] || 'Неизвестно';
@@ -34,9 +34,9 @@ export default function AnalyticsPage() {
       subdivMap[key].returns += getNum(r, 'Возврат от агрегатора шт');
     });
 
-    // By product group
+    // By product group — all regions
     const groupMap = {};
-    spbBelSummary.forEach(r => {
+    allSummary.forEach(r => {
       const key = r['_productGroup'] || 'Неизвестно';
       if (!groupMap[key]) groupMap[key] = { name: key, shipped: 0, toShip: 0, received: 0 };
       groupMap[key].shipped += getNum(r, 'Отгружено шт');
@@ -44,16 +44,16 @@ export default function AnalyticsPage() {
       groupMap[key].received += getNum(r, 'Получено шт');
     });
 
-    // By report type (week vs month)
+    // By report type (week vs month) — all regions
     const typeMap = {};
-    spbBelSummary.forEach(r => {
+    allSummary.forEach(r => {
       const key = r['_reportType'] || 'Неизвестно';
       if (!typeMap[key]) typeMap[key] = { name: key, shipped: 0, toShip: 0 };
       typeMap[key].shipped += getNum(r, 'Отгружено шт');
       typeMap[key].toShip += getNum(r, 'Всего к вывозу шт');
     });
 
-    // Top stores by shipping %
+    // Top stores by volume — only SPB/BEL
     const storeData = spbBelSummary
       .filter(r => getField(r, 'Отгружено товара %') !== null)
       .map(r => ({
@@ -64,7 +64,7 @@ export default function AnalyticsPage() {
       .sort((a, b) => b.shipped - a.shipped)
       .slice(0, 15);
 
-    // Bottom stores (lowest shipping %)
+    // Bottom stores (lowest shipping %) — only SPB/BEL
     const bottomStores = spbBelSummary
       .filter(r => {
         const p = getField(r, 'Отгружено товара %');
@@ -98,7 +98,7 @@ export default function AnalyticsPage() {
     };
   }, [spbBelSummary]);
 
-  if (!parsedFiles.length) {
+  if (!parsedFiles.length || !allSummary) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <Upload size={32} className="text-gray-300 mb-3" />

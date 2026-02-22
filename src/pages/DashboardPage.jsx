@@ -2,95 +2,112 @@ import { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { useNavigate } from 'react-router-dom';
 import { getField, getNum } from '../utils/excelParser';
-import { Truck, Package, AlertTriangle, CheckCircle, TrendingDown, Upload } from 'lucide-react';
+import { Truck, Package, AlertTriangle, CheckCircle, TrendingDown, Upload, BarChart2 } from 'lucide-react';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-function KpiCard({ title, value, subtitle, icon: Icon, color, onClick }) {
-  const iconBg = { blue:'bg-blue-100', green:'bg-green-100', red:'bg-red-100', amber:'bg-amber-100', purple:'bg-purple-100' };
-  const iconCl = { blue:'text-blue-600', green:'text-green-600', red:'text-red-600', amber:'text-amber-600', purple:'text-purple-600' };
+function KpiCard({ title, value, subtitle, icon: Icon, accent = false, onClick }) {
   return (
-    <div onClick={onClick} className={`bg-white rounded-xl border border-gray-200 shadow-sm p-4 ${onClick?'cursor-pointer hover:shadow-md transition-shadow':''}`}>
-      <div className={`inline-flex p-2 rounded-lg ${iconBg[color]}`}>
-        <Icon size={18} className={iconCl[color]} />
+    <div
+      onClick={onClick}
+      className={`bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex gap-3 items-start
+        ${accent ? 'border-l-4 border-l-[#E31E24]' : ''}
+        ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+    >
+      <div className={`p-2 rounded-lg flex-shrink-0 ${accent ? 'bg-red-50' : 'bg-gray-100'}`}>
+        <Icon size={18} className={accent ? 'text-[#E31E24]' : 'text-gray-500'} />
       </div>
-      <div className="mt-3">
-        <div className="text-2xl font-bold text-gray-900">{value}</div>
-        <div className="text-sm font-medium text-gray-700 mt-0.5">{title}</div>
-        {subtitle && <div className="text-xs text-gray-500 mt-0.5">{subtitle}</div>}
+      <div className="min-w-0">
+        <div className="text-2xl font-bold text-gray-900 leading-tight">{value}</div>
+        <div className="text-sm font-medium text-gray-700 mt-0.5 truncate">{title}</div>
+        {subtitle && <div className="text-xs text-gray-400 mt-0.5">{subtitle}</div>}
       </div>
     </div>
   );
 }
 
-function BarRow({ label, value, max, color = 'blue', extra }) {
-  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
-  const colors = { blue:'bg-blue-500', green:'bg-green-500', red:'bg-red-500', amber:'bg-amber-500' };
+function BarRow({ label, value, max, pct, extra }) {
+  const width = max > 0 ? Math.min((value / max) * 100, 100) : 0;
+  const color = pct >= 90 ? '#22c55e' : pct >= 70 ? '#f59e0b' : '#E31E24';
   return (
-    <div className="flex items-center gap-2 py-1">
-      <div className="w-28 text-xs text-gray-600 truncate flex-shrink-0">{label}</div>
-      <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-        <div className={`h-1.5 rounded-full ${colors[color]||'bg-blue-500'}`} style={{ width:`${pct}%` }} />
+    <div className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
+      <div className="w-32 text-xs text-gray-600 truncate flex-shrink-0">{label}</div>
+      <div className="flex-1 bg-gray-100 rounded-full h-2">
+        <div className="h-2 rounded-full transition-all" style={{ width: `${width}%`, backgroundColor: color }} />
       </div>
-      <div className="w-20 text-xs font-medium text-gray-900 text-right flex-shrink-0">{value?.toLocaleString('ru-RU') ?? '—'}</div>
-      {extra && <div className="w-14 text-xs text-gray-500 text-right flex-shrink-0">{extra}</div>}
+      <div className="w-20 text-xs font-semibold text-gray-900 text-right flex-shrink-0">{value?.toLocaleString('ru-RU') ?? '—'}</div>
+      {extra && <div className="w-12 text-xs font-medium text-right flex-shrink-0" style={{ color }}>{extra}</div>}
     </div>
   );
 }
 
 function SectionTitle({ children }) {
-  return <h2 className="text-sm font-semibold text-gray-700 mb-3">{children}</h2>;
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <div className="w-1 h-4 rounded-full bg-[#E31E24]" />
+      <h2 className="text-sm font-semibold text-gray-800">{children}</h2>
+    </div>
+  );
 }
 
 function Tab({ active, onClick, children }) {
   return (
-    <button onClick={onClick}
-      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${active ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+    <button
+      onClick={onClick}
+      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+        active ? 'bg-[#E31E24] text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+      }`}
+    >
       {children}
     </button>
   );
 }
 
+function PctBadge({ pct }) {
+  const color = pct >= 90 ? 'bg-green-100 text-green-700' : pct >= 70 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
+  return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${color}`}>{pct.toFixed(1)}%</span>;
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const { spbBelSummary, parsedFiles } = useData();
+  const { allSummary, spbBelSummary, parsedFiles } = useData();
   const navigate = useNavigate();
-  const [groupView, setGroupView] = useState('subdivision'); // subdivision | region | productGroup
+  const [groupView, setGroupView] = useState('subdivision');
 
   const kpi = useMemo(() => {
-    if (!spbBelSummary.length) return null;
-    const sum = (key) => spbBelSummary.reduce((s, r) => s + getNum(r, key), 0);
+    if (!allSummary.length) return null;
 
-    const totalToShip  = sum('Всего к вывозу шт');
-    const totalShipped = sum('Отгружено шт');
-    const totalReceived= sum('Получено шт');
-    const totalReturn  = sum('Возврат от агрегатора шт');
-    const totalWriteoff= sum('Вычерк шт');
-    const totalShipments=sum('Кол-во вывозов');
-    const totalRemaining=sum('Осталось отгрузить пар шт');
-    const stores = new Set(spbBelSummary.map(r => `${r['Магазин']}|${r['_productGroup']}|${r['_reportType']}`)).size;
+    // Global KPIs from ALL regions
+    const sumAll = (key) => allSummary.reduce((s, r) => s + getNum(r, key), 0);
+    const totalToShip   = sumAll('Всего к вывозу шт');
+    const totalShipped  = sumAll('Отгружено шт');
+    const totalReceived = sumAll('Получено шт');
+    const totalReturn   = sumAll('Возврат от агрегатора шт');
+    const totalWriteoff = sumAll('Вычерк шт');
+    const totalShipments= sumAll('Кол-во вывозов');
+    const totalRemaining= sumAll('Осталось отгрузить пар шт');
+    const avgShippedPct = allSummary.length
+      ? allSummary.reduce((s, r) => s + getNum(r, 'Отгружено товара %'), 0) / allSummary.length
+      : 0;
 
+    // Problem stores only from SPB/BEL
     const problemStores = spbBelSummary.filter(r => {
       const sp = getNum(r, 'Отгружено товара %');
       const wp = getNum(r, 'Вычерк по сборке %');
       return (sp > 0 && sp < 80) || wp > 15;
-    });
+    }).length;
 
-    const avgShippedPct = spbBelSummary.length
-      ? spbBelSummary.reduce((s, r) => s + getNum(r, 'Отгружено товара %'), 0) / spbBelSummary.length
-      : 0;
-
-    // Group aggregation helper
-    const groupBy = (key) => {
+    // Group helper
+    const groupBy = (data, key) => {
       const map = {};
-      spbBelSummary.forEach(r => {
-        const k = String(getField(r, key) || 'Неизвестно');
+      data.forEach(r => {
+        const k = String(getField(r, key) || r[key] || 'Неизвестно');
         if (!map[k]) map[k] = { name: k, shipped: 0, toShip: 0, received: 0, shipments: 0, stores: new Set() };
-        map[k].shipped    += getNum(r, 'Отгружено шт');
-        map[k].toShip     += getNum(r, 'Всего к вывозу шт');
-        map[k].received   += getNum(r, 'Получено шт');
-        map[k].shipments  += getNum(r, 'Кол-во вывозов');
+        map[k].shipped   += getNum(r, 'Отгружено шт');
+        map[k].toShip    += getNum(r, 'Всего к вывозу шт');
+        map[k].received  += getNum(r, 'Получено шт');
+        map[k].shipments += getNum(r, 'Кол-во вывозов');
         map[k].stores.add(r['Магазин']);
       });
       return Object.values(map)
@@ -100,23 +117,29 @@ export default function DashboardPage() {
 
     return {
       totalToShip, totalShipped, totalReceived, totalReturn, totalWriteoff,
-      totalShipments, totalRemaining, stores, avgShippedPct,
-      problemStores: problemStores.length,
-      bySubdivision: groupBy('Подразделение'),
-      byRegion:      groupBy('Регион'),
-      byProductGroup:groupBy('_productGroup'),
+      totalShipments, totalRemaining, avgShippedPct, problemStores,
+      storesCount: new Set(spbBelSummary.map(r => r['Магазин'])).size,
+      // Regions from ALL data
+      byRegion: groupBy(allSummary, 'Регион'),
+      // Subdivisions only SPB/BEL
+      bySubdivision: groupBy(spbBelSummary, 'Подразделение'),
+      // Product groups from ALL data
+      byProductGroup: groupBy(allSummary, '_productGroup'),
     };
-  }, [spbBelSummary]);
+  }, [allSummary, spbBelSummary]);
 
   if (!parsedFiles.length) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
-        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-          <Upload size={28} className="text-gray-400" />
+        <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4 border border-red-100">
+          <Upload size={28} className="text-[#E31E24]" />
         </div>
         <h3 className="text-lg font-semibold text-gray-700 mb-2">Нет данных</h3>
         <p className="text-sm text-gray-500 mb-4 max-w-xs">Загрузите Excel-файлы с отчётами вывозов</p>
-        <button onClick={() => navigate('/upload')} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors">
+        <button
+          onClick={() => navigate('/upload')}
+          className="px-5 py-2 bg-[#E31E24] text-white rounded-lg text-sm font-semibold hover:bg-[#c51c20] transition-colors"
+        >
           Загрузить файлы
         </button>
       </div>
@@ -136,98 +159,115 @@ export default function DashboardPage() {
       {/* Files badges */}
       <div className="flex flex-wrap gap-2">
         {parsedFiles.map(f => (
-          <span key={f.fileName} className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
-            <Package size={11} className="mr-1.5" />
+          <span key={f.fileName} className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-gray-100 text-gray-600 border border-gray-200">
+            <Package size={11} className="mr-1.5 text-[#E31E24]" />
             {f.productGroup} · {f.reportType} · {f.period || f.fileName}
           </span>
         ))}
       </div>
 
-      {/* KPI row 1 */}
+      {/* KPI row 1 — main metrics (accent) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard title="Всего к вывозу"    value={kpi.totalToShip.toLocaleString('ru-RU')}   subtitle="шт."                              icon={Package}       color="blue" />
-        <KpiCard title="Отгружено"         value={kpi.totalShipped.toLocaleString('ru-RU')}  subtitle={`шт. · ${kpi.avgShippedPct.toFixed(1)}%`} icon={Truck}   color="green" onClick={() => navigate('/shipments')} />
-        <KpiCard title="Получено"          value={kpi.totalReceived.toLocaleString('ru-RU')} subtitle="шт."                              icon={CheckCircle}   color="purple" />
-        <KpiCard title="Проблемных"        value={kpi.problemStores}                         subtitle={`из ${kpi.stores} строк`}         icon={AlertTriangle} color={kpi.problemStores > 0 ? 'red' : 'green'} onClick={() => navigate('/control')} />
+        <KpiCard
+          title="Всего к вывозу"
+          value={kpi.totalToShip.toLocaleString('ru-RU')}
+          subtitle="шт. · все регионы"
+          icon={Package}
+          accent
+        />
+        <KpiCard
+          title="Отгружено"
+          value={kpi.totalShipped.toLocaleString('ru-RU')}
+          subtitle={`шт. · ср. ${kpi.avgShippedPct.toFixed(1)}%`}
+          icon={Truck}
+          accent
+          onClick={() => navigate('/shipments')}
+        />
+        <KpiCard
+          title="Получено"
+          value={kpi.totalReceived.toLocaleString('ru-RU')}
+          subtitle="шт. · все регионы"
+          icon={CheckCircle}
+          accent
+        />
+        <KpiCard
+          title="Проблемных"
+          value={kpi.problemStores}
+          subtitle={`из ${kpi.storesCount} маг. СПБ/БЕЛ`}
+          icon={AlertTriangle}
+          accent={kpi.problemStores > 0}
+          onClick={() => navigate('/control')}
+        />
       </div>
 
-      {/* KPI row 2 */}
+      {/* KPI row 2 — secondary metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard title="Кол-во вывозов"    value={kpi.totalShipments.toLocaleString('ru-RU')}  subtitle="заказов"  icon={Truck}          color="blue" />
-        <KpiCard title="Остаток"           value={kpi.totalRemaining.toLocaleString('ru-RU')}  subtitle="шт."      icon={Package}        color="amber" />
-        <KpiCard title="Возврат"           value={kpi.totalReturn.toLocaleString('ru-RU')}     subtitle="шт."      icon={TrendingDown}   color="red" />
-        <KpiCard title="Вычерк"            value={kpi.totalWriteoff.toLocaleString('ru-RU')}   subtitle="шт."      icon={AlertTriangle}  color="amber" />
+        <KpiCard title="Кол-во вывозов"  value={kpi.totalShipments.toLocaleString('ru-RU')}  subtitle="заказов · все регионы" icon={Truck} />
+        <KpiCard title="Остаток"          value={kpi.totalRemaining.toLocaleString('ru-RU')}  subtitle="шт. нераспределено"   icon={Package} />
+        <KpiCard title="Возврат"          value={kpi.totalReturn.toLocaleString('ru-RU')}     subtitle="шт. · все регионы"    icon={TrendingDown} />
+        <KpiCard title="Вычерк"           value={kpi.totalWriteoff.toLocaleString('ru-RU')}   subtitle="шт. · все регионы"    icon={AlertTriangle} />
       </div>
 
-      {/* Grouped breakdown */}
+      {/* Grouped bar chart */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <SectionTitle>Отгружено по группировке</SectionTitle>
           <div className="flex gap-1.5">
-            <Tab active={groupView === 'subdivision'}  onClick={() => setGroupView('subdivision')}>Подразделения</Tab>
-            <Tab active={groupView === 'region'}       onClick={() => setGroupView('region')}>Регионы</Tab>
+            <Tab active={groupView === 'subdivision'}  onClick={() => setGroupView('subdivision')}>Подразделения СПБ/БЕЛ</Tab>
+            <Tab active={groupView === 'region'}       onClick={() => setGroupView('region')}>Все регионы</Tab>
             <Tab active={groupView === 'productGroup'} onClick={() => setGroupView('productGroup')}>Группы товаров</Tab>
           </div>
         </div>
-
-        <div className="space-y-0.5">
+        <div className="space-y-0">
           {groupData.map(d => (
-            <BarRow
-              key={d.name}
-              label={d.name}
-              value={d.shipped}
-              max={maxShipped}
-              color="blue"
-              extra={`${d.pct.toFixed(0)}%`}
-            />
+            <BarRow key={d.name} label={d.name} value={d.shipped} max={maxShipped} pct={d.pct} extra={`${d.pct.toFixed(0)}%`} />
           ))}
-          {groupData.length === 0 && <p className="text-sm text-gray-400">Нет данных</p>}
+          {groupData.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">Нет данных</p>}
         </div>
       </div>
 
-      {/* Side-by-side: regions + subdivisions detail */}
+      {/* Side-by-side detail tables */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-        {/* By region */}
+        {/* All regions */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <SectionTitle>По регионам — детали</SectionTitle>
+          <SectionTitle>По регионам — все данные</SectionTitle>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-gray-100 text-gray-500">
+                <tr className="border-b-2 border-[#E31E24]/20 text-gray-500">
                   <th className="pb-2 text-left font-semibold">Регион</th>
                   <th className="pb-2 text-right font-semibold">К вывозу</th>
                   <th className="pb-2 text-right font-semibold">Отгружено</th>
                   <th className="pb-2 text-right font-semibold">%</th>
-                  <th className="pb-2 text-right font-semibold">Магазинов</th>
+                  <th className="pb-2 text-right font-semibold">Маг.</th>
                 </tr>
               </thead>
               <tbody>
                 {kpi.byRegion.map(r => (
-                  <tr key={r.name} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-1.5 text-gray-700">{r.name}</td>
+                  <tr key={r.name} className="border-b border-gray-50 hover:bg-red-50/30 transition-colors">
+                    <td className="py-1.5 font-medium text-gray-800">{r.name}</td>
                     <td className="py-1.5 text-right text-gray-600">{r.toShip.toLocaleString('ru-RU')}</td>
-                    <td className="py-1.5 text-right text-gray-800 font-medium">{r.shipped.toLocaleString('ru-RU')}</td>
-                    <td className="py-1.5 text-right">
-                      <span className={`font-medium ${r.pct >= 90 ? 'text-green-600' : r.pct >= 70 ? 'text-amber-600' : 'text-red-600'}`}>
-                        {r.pct.toFixed(1)}%
-                      </span>
-                    </td>
+                    <td className="py-1.5 text-right font-semibold text-gray-900">{r.shipped.toLocaleString('ru-RU')}</td>
+                    <td className="py-1.5 text-right"><PctBadge pct={r.pct} /></td>
                     <td className="py-1.5 text-right text-gray-500">{r.storeCount}</td>
                   </tr>
                 ))}
+                {kpi.byRegion.length === 0 && (
+                  <tr><td colSpan={5} className="py-4 text-center text-gray-400">Нет данных</td></tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* By subdivision */}
+        {/* SPB/BEL subdivisions */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <SectionTitle>По подразделениям — детали</SectionTitle>
+          <SectionTitle>По подразделениям — СПБ и БЕЛ</SectionTitle>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-gray-100 text-gray-500">
+                <tr className="border-b-2 border-[#E31E24]/20 text-gray-500">
                   <th className="pb-2 text-left font-semibold">Подразделение</th>
                   <th className="pb-2 text-right font-semibold">К вывозу</th>
                   <th className="pb-2 text-right font-semibold">Отгружено</th>
@@ -237,48 +277,67 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {kpi.bySubdivision.map(r => (
-                  <tr key={r.name} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-1.5 text-gray-700">{r.name}</td>
+                  <tr key={r.name} className="border-b border-gray-50 hover:bg-red-50/30 transition-colors">
+                    <td className="py-1.5 font-medium text-gray-800">{r.name}</td>
                     <td className="py-1.5 text-right text-gray-600">{r.toShip.toLocaleString('ru-RU')}</td>
-                    <td className="py-1.5 text-right text-gray-800 font-medium">{r.shipped.toLocaleString('ru-RU')}</td>
-                    <td className="py-1.5 text-right">
-                      <span className={`font-medium ${r.pct >= 90 ? 'text-green-600' : r.pct >= 70 ? 'text-amber-600' : 'text-red-600'}`}>
-                        {r.pct.toFixed(1)}%
-                      </span>
-                    </td>
+                    <td className="py-1.5 text-right font-semibold text-gray-900">{r.shipped.toLocaleString('ru-RU')}</td>
+                    <td className="py-1.5 text-right"><PctBadge pct={r.pct} /></td>
                     <td className="py-1.5 text-right text-gray-500">{r.storeCount}</td>
                   </tr>
                 ))}
+                {kpi.bySubdivision.length === 0 && (
+                  <tr><td colSpan={5} className="py-4 text-center text-gray-400">Нет данных</td></tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
       </div>
 
-      {/* By product group */}
+      {/* Product groups */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-        <SectionTitle>По группам товаров</SectionTitle>
+        <SectionTitle>По группам товаров — все регионы</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {kpi.byProductGroup.map(g => (
-            <div key={g.name} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-              <div className="text-sm font-semibold text-gray-800 mb-2">{g.name}</div>
-              <div className="space-y-1 text-xs text-gray-600">
-                <div className="flex justify-between"><span>К вывозу</span><span className="font-medium text-gray-800">{g.toShip.toLocaleString('ru-RU')}</span></div>
-                <div className="flex justify-between"><span>Отгружено</span><span className="font-medium text-gray-800">{g.shipped.toLocaleString('ru-RU')}</span></div>
-                <div className="flex justify-between"><span>Получено</span><span className="font-medium text-gray-800">{g.received.toLocaleString('ru-RU')}</span></div>
-                <div className="flex justify-between"><span>Вывозов</span><span className="font-medium text-gray-800">{g.shipments.toLocaleString('ru-RU')}</span></div>
+            <div key={g.name} className="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-[#E31E24]/40 transition-colors">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-semibold text-gray-800">{g.name}</div>
+                <PctBadge pct={g.pct} />
               </div>
-              <div className="mt-2">
-                <div className="bg-gray-200 rounded-full h-1.5">
-                  <div className={`h-1.5 rounded-full ${g.pct >= 90 ? 'bg-green-500' : g.pct >= 70 ? 'bg-amber-500' : 'bg-red-500'}`}
-                    style={{ width:`${Math.min(g.pct, 100)}%` }} />
+              <div className="space-y-1 text-xs text-gray-600">
+                <div className="flex justify-between">
+                  <span>К вывозу</span>
+                  <span className="font-semibold text-gray-800">{g.toShip.toLocaleString('ru-RU')}</span>
                 </div>
-                <div className={`text-xs font-semibold mt-1 ${g.pct >= 90 ? 'text-green-600' : g.pct >= 70 ? 'text-amber-600' : 'text-red-600'}`}>
-                  {g.pct.toFixed(1)}% отгружено
+                <div className="flex justify-between">
+                  <span>Отгружено</span>
+                  <span className="font-semibold text-gray-800">{g.shipped.toLocaleString('ru-RU')}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Получено</span>
+                  <span className="font-semibold text-gray-800">{g.received.toLocaleString('ru-RU')}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Вывозов</span>
+                  <span className="font-semibold text-gray-800">{g.shipments.toLocaleString('ru-RU')}</span>
+                </div>
+              </div>
+              <div className="mt-2.5">
+                <div className="bg-gray-200 rounded-full h-1.5">
+                  <div
+                    className="h-1.5 rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(g.pct, 100)}%`,
+                      backgroundColor: g.pct >= 90 ? '#22c55e' : g.pct >= 70 ? '#f59e0b' : '#E31E24',
+                    }}
+                  />
                 </div>
               </div>
             </div>
           ))}
+          {kpi.byProductGroup.length === 0 && (
+            <p className="text-sm text-gray-400 col-span-3 text-center py-4">Нет данных</p>
+          )}
         </div>
       </div>
 
