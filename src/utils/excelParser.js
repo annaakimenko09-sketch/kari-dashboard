@@ -51,7 +51,9 @@ function normalizeRow(obj) {
 
 /**
  * Parse "Отчет" sheet (summary by store)
- * Layout: rows 0-1 title/period, row 2 headers, row 3+ data (with repeated headers blocks)
+ * Returns { storeRows, regionTotals }
+ * storeRows: individual store rows
+ * regionTotals: ИТОГО rows per region (col A = region, col B contains 'ИТОГО')
  */
 function parseReportSheet(ws) {
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
@@ -64,10 +66,11 @@ function parseReportSheet(ws) {
     }
   }
 
-  if (headerIndices.length === 0) return [];
+  if (headerIndices.length === 0) return { storeRows: [], regionTotals: [] };
 
   const headers = rows[headerIndices[0]];
-  const data = [];
+  const storeRows = [];
+  const regionTotals = [];
 
   for (let i = 0; i < rows.length; i++) {
     if (headerIndices.includes(i)) continue;
@@ -78,27 +81,37 @@ function parseReportSheet(ws) {
     const subdivVal = String(row[1] || '');
     const storeVal = row[2];
 
-    if (!storeVal) continue;
-    const storeStr = String(storeVal);
+    if (regionVal === 'Регион') continue;
 
-    // Skip total/summary rows
-    if (
-      storeStr.includes('ИТОГО') ||
-      storeStr === 'Kari' ||
-      storeStr === 'Магазин' ||
-      subdivVal.includes('ИТОГО') ||
-      regionVal === 'Регион'
-    ) continue;
+    const storeStr = storeVal != null ? String(storeVal) : '';
+    const subdivStr = subdivVal;
+
+    // Collect ИТОГО per region (col B has ИТОГО, col C is null or also ИТОГО)
+    if (subdivStr.includes('ИТОГО') && regionVal && !storeStr.includes('ИТОГО')) {
+      const obj = {};
+      headers.forEach((h, idx) => {
+        if (h) obj[h] = row[idx];
+      });
+      // Set the region name to the actual region (col A)
+      obj['Регион'] = regionVal;
+      regionTotals.push(normalizeRow(obj));
+      continue;
+    }
+
+    // Also catch global ИТОГО rows (where col A contains ИТОГО)
+    if (regionVal.includes('ИТОГО') || storeStr.includes('ИТОГО') || storeStr === 'Kari') continue;
+    if (!storeVal) continue;
+    if (storeStr === 'Магазин') continue;
 
     const obj = {};
     headers.forEach((h, idx) => {
       if (h) obj[h] = row[idx];
     });
 
-    data.push(normalizeRow(obj));
+    storeRows.push(normalizeRow(obj));
   }
 
-  return data;
+  return { storeRows, regionTotals };
 }
 
 /**
@@ -227,10 +240,19 @@ export async function parseExcelFiles(fileList) {
       let detail = [];
       let meta = { title: '', period: '' };
 
+      let regionTotals = [];
+
       if (wb.SheetNames.includes('Отчет')) {
         const ws = wb.Sheets['Отчет'];
         meta = extractMeta(ws);
-        summary = parseReportSheet(ws).map(r => ({
+        const parsed = parseReportSheet(ws);
+        summary = parsed.storeRows.map(r => ({
+          ...r,
+          _productGroup: productGroup,
+          _reportType: reportType,
+          _file: fname,
+        }));
+        regionTotals = parsed.regionTotals.map(r => ({
           ...r,
           _productGroup: productGroup,
           _reportType: reportType,
@@ -254,13 +276,21 @@ export async function parseExcelFiles(fileList) {
         const ws = wb.Sheets[sheetName];
         if (sheetName.includes('Отчет')) {
           const subGroup = sheetName.replace('Отчет', '').trim() || productGroup;
-          const subRows = parseReportSheet(ws).map(r => ({
+          const parsed = parseReportSheet(ws);
+          const subRows = parsed.storeRows.map(r => ({
+            ...r,
+            _productGroup: subGroup,
+            _reportType: reportType,
+            _file: fname,
+          }));
+          const subTotals = parsed.regionTotals.map(r => ({
             ...r,
             _productGroup: subGroup,
             _reportType: reportType,
             _file: fname,
           }));
           summary = [...summary, ...subRows];
+          regionTotals = [...regionTotals, ...subTotals];
         } else if (sheetName.includes('Детализация')) {
           const subGroup = sheetName.replace('Детализация', '').trim() || productGroup;
           const subRows = parseDetailSheet(ws).map(r => ({
@@ -273,7 +303,7 @@ export async function parseExcelFiles(fileList) {
         }
       }
 
-      results.push({ fileName: fname, title: meta.title, period: meta.period, productGroup, reportType, summary, detail });
+      results.push({ fileName: fname, title: meta.title, period: meta.period, productGroup, reportType, summary, detail, regionTotals });
     } catch (err) {
       console.error(`Error parsing ${file.name}:`, err);
     }
@@ -288,6 +318,10 @@ export function mergeSummaryData(parsedFiles) {
 
 export function mergeDetailData(parsedFiles) {
   return parsedFiles.flatMap(f => f.detail);
+}
+
+export function mergeRegionTotals(parsedFiles) {
+  return parsedFiles.flatMap(f => f.regionTotals || []);
 }
 
 export function getUniqueValues(data, key) {

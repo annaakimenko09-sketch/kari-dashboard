@@ -5,11 +5,14 @@ import { Menu } from 'lucide-react';
 import { useData } from '../context/DataContext';
 
 const pageTitles = {
-  '/': 'Dashboard',
-  '/shipments': 'Вывозы товаров',
-  '/analytics': 'Аналитика',
-  '/control': 'Контроль проблем',
-  '/upload': 'Загрузить данные',
+  '/obuv':         'Dashboard — Обувь',
+  '/obuv/vyvoz':   'Вывозы — Обувь',
+  '/obuv/control': 'Контроль — Обувь',
+  '/kids':         'Dashboard — Кидс',
+  '/kids/vyvoz':   'Вывозы — Кидс',
+  '/kids/control': 'Контроль — Кидс',
+  '/orders':       'Контроль заказов',
+  '/upload':       'Загрузить данные',
 };
 
 export default function Layout() {
@@ -17,7 +20,7 @@ export default function Layout() {
   const location = useLocation();
   const { parsedFiles } = useData();
 
-  const title = pageTitles[location.pathname] || 'КАРИ';
+  const title = pageTitles[location.pathname] || 'КАРИ Аналитика';
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -42,11 +45,10 @@ export default function Layout() {
             <div className="min-w-0">
               <h1 className="text-base font-bold text-gray-900 leading-tight truncate">{title}</h1>
               <p className="text-xs text-gray-400 leading-tight">
-                Регион: СПБ и БЕЛ
-                {parsedFiles.length > 0 && (
-                  <span className="ml-2" style={{ color: '#E91E8C' }}>
-                    · Загружено файлов: {parsedFiles.length}
-                  </span>
+                {parsedFiles.length > 0 ? (
+                  <span style={{ color: '#E91E8C' }}>Загружено файлов: {parsedFiles.length}</span>
+                ) : (
+                  'Загрузите Excel-файлы'
                 )}
               </p>
             </div>
@@ -54,11 +56,6 @@ export default function Layout() {
 
           {/* Right side */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {parsedFiles.length === 0 && (
-              <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                Загрузите Excel-файлы
-              </span>
-            )}
             {/* KARI badge */}
             <div
               className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg"
