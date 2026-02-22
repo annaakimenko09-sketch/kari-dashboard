@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { useNavigate } from 'react-router-dom';
 import { getField, getNum } from '../utils/excelParser';
-import { Truck, Package, AlertTriangle, CheckCircle, TrendingDown, Upload, BarChart2 } from 'lucide-react';
+import { Truck, Package, AlertTriangle, CheckCircle, TrendingDown, Upload } from 'lucide-react';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 

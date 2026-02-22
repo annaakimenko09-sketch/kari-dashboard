@@ -96,9 +96,9 @@ export default function AnalyticsPage() {
       bottomStores,
       efficiencyData: efficiencyData.sort((a, b) => (b['Вычерк'] + b['Возврат']) - (a['Вычерк'] + a['Возврат'])),
     };
-  }, [spbBelSummary]);
+  }, [spbBelSummary, allSummary]);
 
-  if (!parsedFiles.length || !allSummary) {
+  if (!parsedFiles.length) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <Upload size={32} className="text-gray-300 mb-3" />
