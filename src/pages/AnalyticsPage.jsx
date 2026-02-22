@@ -6,15 +6,9 @@ import {
   PieChart, Pie, Cell, Legend, LineChart, Line,
 } from 'recharts';
 import { Upload } from 'lucide-react';
+import { getField, getNum } from '../utils/excelParser';
 
 const COLORS = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
-
-function getVal(row, key) {
-  if (row[key] !== undefined) return row[key];
-  const altKey = key.replace(', ', ' ');
-  if (row[altKey] !== undefined) return row[altKey];
-  return null;
-}
 
 function SectionTitle({ children }) {
   return <h2 className="text-sm font-semibold text-gray-700 mb-3">{children}</h2>;
@@ -33,11 +27,11 @@ export default function AnalyticsPage() {
     spbBelSummary.forEach(r => {
       const key = r['Подразделение'] || 'Неизвестно';
       if (!subdivMap[key]) subdivMap[key] = { name: key, shipped: 0, toShip: 0, received: 0, writeoff: 0, returns: 0 };
-      subdivMap[key].shipped += parseFloat(getVal(r, 'Отгружено, шт') ?? 0) || 0;
-      subdivMap[key].toShip += parseFloat(getVal(r, 'Всего к вывозу, шт') ?? 0) || 0;
-      subdivMap[key].received += parseFloat(getVal(r, 'Получено, шт') ?? 0) || 0;
-      subdivMap[key].writeoff += parseFloat(getVal(r, 'Вычерк, шт') ?? 0) || 0;
-      subdivMap[key].returns += parseFloat(getVal(r, 'Возврат от агрегатора, шт') ?? 0) || 0;
+      subdivMap[key].shipped += getNum(r, 'Отгружено шт');
+      subdivMap[key].toShip += getNum(r, 'Всего к вывозу шт');
+      subdivMap[key].received += getNum(r, 'Получено шт');
+      subdivMap[key].writeoff += getNum(r, 'Вычерк шт');
+      subdivMap[key].returns += getNum(r, 'Возврат от агрегатора шт');
     });
 
     // By product group
@@ -45,9 +39,9 @@ export default function AnalyticsPage() {
     spbBelSummary.forEach(r => {
       const key = r['_productGroup'] || 'Неизвестно';
       if (!groupMap[key]) groupMap[key] = { name: key, shipped: 0, toShip: 0, received: 0 };
-      groupMap[key].shipped += parseFloat(getVal(r, 'Отгружено, шт') ?? 0) || 0;
-      groupMap[key].toShip += parseFloat(getVal(r, 'Всего к вывозу, шт') ?? 0) || 0;
-      groupMap[key].received += parseFloat(getVal(r, 'Получено, шт') ?? 0) || 0;
+      groupMap[key].shipped += getNum(r, 'Отгружено шт');
+      groupMap[key].toShip += getNum(r, 'Всего к вывозу шт');
+      groupMap[key].received += getNum(r, 'Получено шт');
     });
 
     // By report type (week vs month)
@@ -55,17 +49,17 @@ export default function AnalyticsPage() {
     spbBelSummary.forEach(r => {
       const key = r['_reportType'] || 'Неизвестно';
       if (!typeMap[key]) typeMap[key] = { name: key, shipped: 0, toShip: 0 };
-      typeMap[key].shipped += parseFloat(getVal(r, 'Отгружено, шт') ?? 0) || 0;
-      typeMap[key].toShip += parseFloat(getVal(r, 'Всего к вывозу, шт') ?? 0) || 0;
+      typeMap[key].shipped += getNum(r, 'Отгружено шт');
+      typeMap[key].toShip += getNum(r, 'Всего к вывозу шт');
     });
 
     // Top stores by shipping %
     const storeData = spbBelSummary
-      .filter(r => getVal(r, 'Отгружено товара, %') !== null)
+      .filter(r => getField(r, 'Отгружено товара %') !== null)
       .map(r => ({
         name: String(r['Магазин'] || '').slice(0, 20),
-        pct: parseFloat(getVal(r, 'Отгружено товара, %') ?? 0) || 0,
-        shipped: parseFloat(getVal(r, 'Отгружено, шт') ?? 0) || 0,
+        pct: getNum(r, 'Отгружено товара %'),
+        shipped: getNum(r, 'Отгружено шт'),
       }))
       .sort((a, b) => b.shipped - a.shipped)
       .slice(0, 15);
@@ -73,14 +67,14 @@ export default function AnalyticsPage() {
     // Bottom stores (lowest shipping %)
     const bottomStores = spbBelSummary
       .filter(r => {
-        const p = parseFloat(getVal(r, 'Отгружено товара, %') ?? null);
-        return p !== null && !isNaN(p) && parseFloat(getVal(r, 'Всего к вывозу, шт') ?? 0) > 0;
+        const p = getField(r, 'Отгружено товара %');
+        return p !== null && !isNaN(parseFloat(p)) && getNum(r, 'Всего к вывозу шт') > 0;
       })
       .map(r => ({
         name: String(r['Магазин'] || '').slice(0, 20),
-        pct: parseFloat(getVal(r, 'Отгружено товара, %') ?? 0) || 0,
-        writeoffPct: parseFloat(getVal(r, 'Вычерк по сборке, %') ?? 0) || 0,
-        returnPct: parseFloat(getVal(r, 'Возврат от агрегатора, %') ?? 0) || 0,
+        pct: getNum(r, 'Отгружено товара %'),
+        writeoffPct: getNum(r, 'Вычерк по сборке %'),
+        returnPct: getNum(r, 'Возврат от агрегатора %'),
         subdivision: r['Подразделение'] || '',
       }))
       .sort((a, b) => a.pct - b.pct)

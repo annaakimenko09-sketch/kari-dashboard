@@ -2,13 +2,7 @@ import { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, AlertCircle, CheckCircle, Upload, Filter } from 'lucide-react';
-
-function getVal(row, key) {
-  if (row[key] !== undefined) return row[key];
-  const altKey = key.replace(', ', ' ');
-  if (row[altKey] !== undefined) return row[altKey];
-  return null;
-}
+import { getField, getNum } from '../utils/excelParser';
 
 const PROBLEM_TYPES = {
   low_shipped: { label: 'Отгр. < 70%', color: 'red', description: 'Низкий % отгрузки' },
@@ -20,10 +14,10 @@ const PROBLEM_TYPES = {
 
 function getProblemTypes(row) {
   const types = [];
-  const sp = parseFloat(getVal(row, 'Отгружено товара, %') ?? 100) || 100;
-  const wp = parseFloat(getVal(row, 'Вычерк по сборке, %') ?? 0) || 0;
-  const rp = parseFloat(getVal(row, 'Возврат от агрегатора, %') ?? 0) || 0;
-  const rem = parseFloat(getVal(row, 'Осталось отгрузить пар, шт') ?? 0) || 0;
+  const sp = getNum(row, 'Отгружено товара %') || 100;
+  const wp = getNum(row, 'Вычерк по сборке %');
+  const rp = getNum(row, 'Возврат от агрегатора %');
+  const rem = getNum(row, 'Осталось отгрузить пар шт');
 
   if (sp < 70) types.push('low_shipped');
   else if (sp < 80) types.push('medium_shipped');
@@ -175,13 +169,13 @@ export default function ControlPage() {
         {filtered.map(({ row, types, severity }, idx) => {
           const sv = SEVERITY[severity];
           const SvIcon = sv.icon;
-          const sp = parseFloat(getVal(row, 'Отгружено товара, %') ?? 0) || 0;
-          const wp = parseFloat(getVal(row, 'Вычерк по сборке, %') ?? 0) || 0;
-          const rp = parseFloat(getVal(row, 'Возврат от агрегатора, %') ?? 0) || 0;
-          const rem = parseFloat(getVal(row, 'Осталось отгрузить пар, шт') ?? 0) || 0;
-          const shipped = parseFloat(getVal(row, 'Отгружено, шт') ?? 0) || 0;
-          const toShip = parseFloat(getVal(row, 'Всего к вывозу, шт') ?? 0) || 0;
-          const shipments = parseFloat(getVal(row, 'Кол-во вывозов') ?? 0) || 0;
+          const sp = getNum(row, 'Отгружено товара %');
+          const wp = getNum(row, 'Вычерк по сборке %');
+          const rp = getNum(row, 'Возврат от агрегатора %');
+          const rem = getNum(row, 'Осталось отгрузить пар шт');
+          const shipped = getNum(row, 'Отгружено шт');
+          const toShip = getNum(row, 'Всего к вывозу шт');
+          const shipments = getNum(row, 'Кол-во вывозов');
 
           return (
             <div key={idx} className={`rounded-xl border p-4 ${sv.bg} ${sv.border}`}>
