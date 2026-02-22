@@ -100,7 +100,7 @@ export default function ControlPage() {
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <Upload size={32} className="text-gray-300 mb-3" />
         <p className="text-gray-500 mb-3">Нет загруженных данных</p>
-        <button onClick={() => navigate('/upload')} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">
+        <button onClick={() => navigate('/upload')} className="px-4 py-2 bg-[#E91E8C] text-white rounded-lg text-sm font-medium hover:bg-[#c51878]">
           Загрузить файлы
         </button>
       </div>
@@ -135,7 +135,7 @@ export default function ControlPage() {
             onClick={() => setActiveFilter(tab.key)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               activeFilter === tab.key
-                ? tab.color === 'red' ? 'bg-red-600 text-white'
+                ? tab.color === 'red' ? 'bg-[#E91E8C] text-white'
                   : tab.color === 'amber' ? 'bg-amber-500 text-white'
                   : tab.color === 'blue' ? 'bg-blue-600 text-white'
                   : 'bg-gray-800 text-white'

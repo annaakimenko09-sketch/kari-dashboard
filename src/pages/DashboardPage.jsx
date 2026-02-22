@@ -11,11 +11,11 @@ function KpiCard({ title, value, subtitle, icon: Icon, accent = false, onClick }
     <div
       onClick={onClick}
       className={`bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex gap-3 items-start
-        ${accent ? 'border-l-4 border-l-[#E31E24]' : ''}
+        ${accent ? 'border-l-4 border-l-[#E91E8C]' : ''}
         ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
     >
       <div className={`p-2 rounded-lg flex-shrink-0 ${accent ? 'bg-red-50' : 'bg-gray-100'}`}>
-        <Icon size={18} className={accent ? 'text-[#E31E24]' : 'text-gray-500'} />
+        <Icon size={18} className={accent ? 'text-[#E91E8C]' : 'text-gray-500'} />
       </div>
       <div className="min-w-0">
         <div className="text-2xl font-bold text-gray-900 leading-tight">{value}</div>
@@ -28,7 +28,7 @@ function KpiCard({ title, value, subtitle, icon: Icon, accent = false, onClick }
 
 function BarRow({ label, value, max, pct, extra }) {
   const width = max > 0 ? Math.min((value / max) * 100, 100) : 0;
-  const color = pct >= 90 ? '#22c55e' : pct >= 70 ? '#f59e0b' : '#E31E24';
+  const color = pct >= 90 ? '#22c55e' : pct >= 70 ? '#f59e0b' : '#E91E8C';
   return (
     <div className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
       <div className="w-32 text-xs text-gray-600 truncate flex-shrink-0">{label}</div>
@@ -44,7 +44,7 @@ function BarRow({ label, value, max, pct, extra }) {
 function SectionTitle({ children }) {
   return (
     <div className="flex items-center gap-2 mb-3">
-      <div className="w-1 h-4 rounded-full bg-[#E31E24]" />
+      <div className="w-1 h-4 rounded-full bg-[#E91E8C]" />
       <h2 className="text-sm font-semibold text-gray-800">{children}</h2>
     </div>
   );
@@ -55,7 +55,7 @@ function Tab({ active, onClick, children }) {
     <button
       onClick={onClick}
       className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-        active ? 'bg-[#E31E24] text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+        active ? 'bg-[#E91E8C] text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
       }`}
     >
       {children}
@@ -132,13 +132,13 @@ export default function DashboardPage() {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4 border border-red-100">
-          <Upload size={28} className="text-[#E31E24]" />
+          <Upload size={28} className="text-[#E91E8C]" />
         </div>
         <h3 className="text-lg font-semibold text-gray-700 mb-2">Нет данных</h3>
         <p className="text-sm text-gray-500 mb-4 max-w-xs">Загрузите Excel-файлы с отчётами вывозов</p>
         <button
           onClick={() => navigate('/upload')}
-          className="px-5 py-2 bg-[#E31E24] text-white rounded-lg text-sm font-semibold hover:bg-[#c51c20] transition-colors"
+          className="px-5 py-2 bg-[#E91E8C] text-white rounded-lg text-sm font-semibold hover:bg-[#c51878] transition-colors"
         >
           Загрузить файлы
         </button>
@@ -160,7 +160,7 @@ export default function DashboardPage() {
       <div className="flex flex-wrap gap-2">
         {parsedFiles.map(f => (
           <span key={f.fileName} className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-gray-100 text-gray-600 border border-gray-200">
-            <Package size={11} className="mr-1.5 text-[#E31E24]" />
+            <Package size={11} className="mr-1.5 text-[#E91E8C]" />
             {f.productGroup} · {f.reportType} · {f.period || f.fileName}
           </span>
         ))}
@@ -235,7 +235,7 @@ export default function DashboardPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b-2 border-[#E31E24]/20 text-gray-500">
+                <tr className="border-b-2 border-[#E91E8C]/20 text-gray-500">
                   <th className="pb-2 text-left font-semibold">Регион</th>
                   <th className="pb-2 text-right font-semibold">К вывозу</th>
                   <th className="pb-2 text-right font-semibold">Отгружено</th>
@@ -267,7 +267,7 @@ export default function DashboardPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b-2 border-[#E31E24]/20 text-gray-500">
+                <tr className="border-b-2 border-[#E91E8C]/20 text-gray-500">
                   <th className="pb-2 text-left font-semibold">Подразделение</th>
                   <th className="pb-2 text-right font-semibold">К вывозу</th>
                   <th className="pb-2 text-right font-semibold">Отгружено</th>
@@ -299,7 +299,7 @@ export default function DashboardPage() {
         <SectionTitle>По группам товаров — все регионы</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {kpi.byProductGroup.map(g => (
-            <div key={g.name} className="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-[#E31E24]/40 transition-colors">
+            <div key={g.name} className="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-[#E91E8C]/40 transition-colors">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-sm font-semibold text-gray-800">{g.name}</div>
                 <PctBadge pct={g.pct} />
@@ -328,7 +328,7 @@ export default function DashboardPage() {
                     className="h-1.5 rounded-full transition-all"
                     style={{
                       width: `${Math.min(g.pct, 100)}%`,
-                      backgroundColor: g.pct >= 90 ? '#22c55e' : g.pct >= 70 ? '#f59e0b' : '#E31E24',
+                      backgroundColor: g.pct >= 90 ? '#22c55e' : g.pct >= 70 ? '#f59e0b' : '#E91E8C',
                     }}
                   />
                 </div>

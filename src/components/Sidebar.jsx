@@ -40,7 +40,7 @@ export default function Sidebar({ open, onClose }) {
             {/* KARI logo mark */}
             <div
               className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 font-black text-white text-sm tracking-tight"
-              style={{ backgroundColor: '#E31E24' }}
+              style={{ backgroundColor: '#E91E8C' }}
             >
               K
             </div>
@@ -77,7 +77,7 @@ export default function Sidebar({ open, onClose }) {
                   isActive ? 'text-white' : 'hover:bg-white/5'
                 }`
               }
-              style={({ isActive }) => isActive ? { backgroundColor: '#E31E24' } : {}}
+              style={({ isActive }) => isActive ? { backgroundColor: '#E91E8C' } : {}}
             >
               {({ isActive }) => (
                 <>

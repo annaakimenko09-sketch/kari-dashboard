@@ -68,7 +68,7 @@ function Tab({ active, onClick, children, count }) {
       onClick={onClick}
       className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${
         active
-          ? 'bg-red-600 text-white'
+          ? 'bg-[#E91E8C] text-white'
           : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
       }`}
     >
@@ -169,7 +169,7 @@ export default function ShipmentsPage() {
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <Upload size={32} className="text-gray-300 mb-3" />
         <p className="text-gray-500 mb-3">Нет загруженных данных</p>
-        <button onClick={() => navigate('/upload')} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">
+        <button onClick={() => navigate('/upload')} className="px-4 py-2 bg-[#E91E8C] text-white rounded-lg text-sm font-medium hover:bg-[#c51878]">
           Загрузить файлы
         </button>
       </div>
@@ -239,7 +239,7 @@ export default function ShipmentsPage() {
               <X size={13} /> Сбросить
             </button>
           )}
-          <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-2 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700">
+          <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-2 text-sm text-white bg-[#E91E8C] rounded-lg hover:bg-[#c51878]">
             <Download size={14} /> Excel
           </button>
         </div>
@@ -300,7 +300,7 @@ export default function ShipmentsPage() {
             className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">←</button>
           {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i+1).map(p => (
             <button key={p} onClick={() => setPage(p)}
-              className={`px-3 py-1.5 text-sm border rounded-lg ${page===p ? 'bg-red-600 text-white border-red-600' : 'border-gray-200 hover:bg-gray-50'}`}>
+              className={`px-3 py-1.5 text-sm border rounded-lg ${page===p ? 'bg-[#E91E8C] text-white border-red-600' : 'border-gray-200 hover:bg-gray-50'}`}>
               {p}
             </button>
           ))}
