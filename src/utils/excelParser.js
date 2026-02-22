@@ -270,8 +270,19 @@ export async function parseExcelFiles(fileList) {
         }));
       }
 
-      // Sub-sheets for kids (Одежда для детей)
+      // Sub-sheets (e.g. "Одежда для детей Отчет", "Кидс Отчет")
       const subSheets = wb.SheetNames.filter(n => n !== 'Отчет' && n !== 'Детализация');
+      const hasSubReportSheets = subSheets.some(n => n.includes('Отчет'));
+
+      // If the file has sub-report-sheets AND the main 'Отчет' was already parsed,
+      // we clear the main summary to avoid duplication — the sub-sheets contain
+      // the same data broken into groups (e.g. kids file: Отчет = all kids,
+      // sub-sheets = each kids sub-group)
+      if (hasSubReportSheets && summary.length > 0) {
+        summary = [];
+        regionTotals = [];
+      }
+
       for (const sheetName of subSheets) {
         const ws = wb.Sheets[sheetName];
         if (sheetName.includes('Отчет')) {
@@ -292,14 +303,17 @@ export async function parseExcelFiles(fileList) {
           summary = [...summary, ...subRows];
           regionTotals = [...regionTotals, ...subTotals];
         } else if (sheetName.includes('Детализация')) {
-          const subGroup = sheetName.replace('Детализация', '').trim() || productGroup;
-          const subRows = parseDetailSheet(ws).map(r => ({
-            ...r,
-            _productGroup: subGroup,
-            _reportType: reportType,
-            _file: fname,
-          }));
-          detail = [...detail, ...subRows];
+          // Only add sub-detail if main detail is empty (avoid duplication)
+          if (detail.length === 0) {
+            const subGroup = sheetName.replace('Детализация', '').trim() || productGroup;
+            const subRows = parseDetailSheet(ws).map(r => ({
+              ...r,
+              _productGroup: subGroup,
+              _reportType: reportType,
+              _file: fname,
+            }));
+            detail = [...detail, ...subRows];
+          }
         }
       }
 

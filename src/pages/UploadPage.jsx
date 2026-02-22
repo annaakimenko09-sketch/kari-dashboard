@@ -16,7 +16,7 @@ export default function UploadPage() {
   // After successful load — auto-navigate to dashboard
   useEffect(() => {
     if (justLoaded && !loading && !error && parsedFiles.length > 0) {
-      const timer = setTimeout(() => navigate('/'), 1200);
+      const timer = setTimeout(() => navigate('/obuv'), 1200);
       return () => clearTimeout(timer);
     }
   }, [justLoaded, loading, error, parsedFiles, navigate]);
@@ -112,7 +112,7 @@ export default function UploadPage() {
           <li>Перетащите Excel-файлы (.xlsx) в зону ниже или нажмите для выбора</li>
           <li>Поддерживаются файлы: "Отчет ДР Неделя", "Отчет ДР Месяц" и их варианты</li>
           <li>Можно загрузить несколько файлов одновременно</li>
-          <li>KPI считаются по всем регионам, детали — по СПБ и БЕЛ</li>
+          <li>KPI считаются по всем регионам, детали по магазинам — по СПБ</li>
         </ul>
       </div>
 
@@ -237,14 +237,14 @@ export default function UploadPage() {
 
           <div className="mt-4 flex gap-2">
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/obuv')}
               className="flex-1 px-4 py-2.5 text-white rounded-lg text-sm font-semibold transition-colors"
               style={{ backgroundColor: BRAND }}
             >
               Перейти на Dashboard
             </button>
             <button
-              onClick={() => navigate('/shipments')}
+              onClick={() => navigate('/obuv/vyvoz')}
               className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
             >
               Смотреть вывозы

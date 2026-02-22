@@ -107,7 +107,7 @@ export default function ControlTemplate({ summary, parsedFiles, accentColor }) {
       <div className="bg-red-50 border border-red-200 rounded-xl p-4">
         <div className="flex items-center gap-2 mb-1">
           <AlertCircle size={18} className="text-red-600" />
-          <span className="font-semibold text-red-800">{counts.all} магазинов требуют внимания (СПБ/БЕЛ)</span>
+          <span className="font-semibold text-red-800">{counts.all} магазинов требуют внимания (СПБ)</span>
         </div>
         <div className="text-xs text-red-600">
           Критерии: Отгружено &lt; 80%, Вычерк &gt; 15%, Возврат &gt; 15%, Остаток &gt; 0

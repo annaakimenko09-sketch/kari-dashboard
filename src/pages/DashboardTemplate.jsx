@@ -271,7 +271,7 @@ export default function DashboardTemplate({
         <KpiCard title="Всего к вывозу"  value={kpi.totalToShip.toLocaleString('ru-RU')}   subtitle="шт · все регионы"  icon={Package}       accentColor={accentColor} accent />
         <KpiCard title="Отгружено"        value={kpi.totalShipped.toLocaleString('ru-RU')}  subtitle={`шт · ср. ${kpi.avgPct.toFixed(1)}%`} icon={Truck} accentColor={accentColor} accent onClick={() => navigate(vyvozPath)} />
         <KpiCard title="Получено"         value={kpi.totalReceived.toLocaleString('ru-RU')} subtitle="шт · все регионы"  icon={CheckCircle}   accentColor={accentColor} accent />
-        <KpiCard title="Проблемных"       value={kpi.problemStores}                         subtitle={`из ${kpi.storesCount} маг. СПБ/БЕЛ`} icon={AlertTriangle} accentColor={accentColor} accent={kpi.problemStores > 0} onClick={() => navigate(controlPath)} />
+        <KpiCard title="Проблемных"       value={kpi.problemStores}                         subtitle={`из ${kpi.storesCount} маг. СПБ`} icon={AlertTriangle} accentColor={accentColor} accent={kpi.problemStores > 0} onClick={() => navigate(controlPath)} />
       </div>
 
       {/* KPI row 2 */}
@@ -287,7 +287,7 @@ export default function DashboardTemplate({
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <SectionTitle accentColor={accentColor}>Отгружено по группировке</SectionTitle>
           <div className="flex gap-1.5 flex-wrap">
-            <Tab active={groupView === 'subdivision'}  onClick={() => setGroupView('subdivision')}  accentColor={accentColor}>Подразделения СПБ/БЕЛ</Tab>
+            <Tab active={groupView === 'subdivision'}  onClick={() => setGroupView('subdivision')}  accentColor={accentColor}>Подразделения СПБ</Tab>
             <Tab active={groupView === 'region'}       onClick={() => setGroupView('region')}       accentColor={accentColor}>Все регионы</Tab>
             {kpi.byProductGroup.length > 1 && (
               <Tab active={groupView === 'productGroup'} onClick={() => setGroupView('productGroup')} accentColor={accentColor}>Группы товаров</Tab>
@@ -336,7 +336,7 @@ export default function DashboardTemplate({
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <SectionTitle accentColor={accentColor}>По подразделениям — СПБ и БЕЛ</SectionTitle>
+          <SectionTitle accentColor={accentColor}>По подразделениям — СПБ</SectionTitle>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
@@ -359,7 +359,7 @@ export default function DashboardTemplate({
                   </tr>
                 ))}
                 {kpi.bySubdivision.length === 0 && (
-                  <tr><td colSpan={5} className="py-4 text-center text-gray-400">Нет данных для СПБ/БЕЛ</td></tr>
+                  <tr><td colSpan={5} className="py-4 text-center text-gray-400">Нет данных для СПБ</td></tr>
                 )}
               </tbody>
             </table>

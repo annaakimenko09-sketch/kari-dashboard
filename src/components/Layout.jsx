@@ -23,7 +23,7 @@ export default function Layout() {
   const title = pageTitles[location.pathname] || 'КАРИ Аналитика';
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen bg-gray-50 overflow-hidden" translate="no">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -56,14 +56,7 @@ export default function Layout() {
 
           {/* Right side */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* KARI badge */}
-            <div
-              className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg"
-              style={{ backgroundColor: '#111827' }}
-            >
-              <img src="/kari-logo.svg" alt="KARI" className="w-5 h-5 object-contain" style={{ filter: 'brightness(0) invert(1)' }} />
-              <span className="text-xs font-bold text-white tracking-wider">КАРИ</span>
-            </div>
+            <img src="/kari-logo.svg" alt="KARI" className="w-7 h-7 object-contain hidden sm:block" />
           </div>
         </header>
 

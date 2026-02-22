@@ -26,7 +26,14 @@ function daysSince(dateVal) {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
-// Urgency levels based on days overdue
+// Check if an order is completed (fulfilled)
+function isCompleted(status) {
+  if (!status) return false;
+  const s = String(status).toLowerCase();
+  return s.includes('получено') || s.includes('отгружено');
+}
+
+// Urgency levels based on days overdue (only for non-completed)
 function getUrgency(days) {
   if (days === null) return null;
   if (days > 12) return 'critical';   // особо критично
@@ -36,11 +43,36 @@ function getUrgency(days) {
 }
 
 const URGENCY_CONFIG = {
-  critical: { label: 'Особо критично',  bg: 'bg-red-50',    border: 'border-red-300',    badge: 'bg-red-100 text-red-700',       dot: 'bg-red-600',    icon: AlertCircle,   days: '> 12 дней' },
-  high:     { label: 'Особый контроль', bg: 'bg-orange-50', border: 'border-orange-300', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500', icon: AlertTriangle, days: '> 10 дней' },
-  medium:   { label: 'Контроль',        bg: 'bg-amber-50',  border: 'border-amber-200',  badge: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500',  icon: Clock,         days: '> 7 дней' },
-  ok:       { label: 'В работе',        bg: 'bg-green-50',  border: 'border-green-200',  badge: 'bg-green-100 text-green-700',   dot: 'bg-green-500',  icon: CheckCircle,   days: '≤ 7 дней' },
+  completed: { label: 'Выполнено',      bg: 'bg-green-50',  border: 'border-green-200',  badge: 'bg-green-100 text-green-700',   dot: 'bg-green-600',  icon: CheckCircle,   days: 'Получено/Отгружено' },
+  critical:  { label: 'Особо критично', bg: 'bg-red-50',    border: 'border-red-300',    badge: 'bg-red-100 text-red-700',       dot: 'bg-red-600',    icon: AlertCircle,   days: '> 12 дней' },
+  high:      { label: 'Особый контроль',bg: 'bg-orange-50', border: 'border-orange-300', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500', icon: AlertTriangle, days: '> 10 дней' },
+  medium:    { label: 'Контроль',       bg: 'bg-amber-50',  border: 'border-amber-200',  badge: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500',  icon: Clock,         days: '> 7 дней' },
+  ok:        { label: 'В работе',       bg: 'bg-white',     border: 'border-gray-100',   badge: 'bg-gray-100 text-gray-600',     dot: 'bg-green-500',  icon: CheckCircle,   days: '≤ 7 дней' },
 };
+
+// Find order number field (RU...) — try several possible column names
+function getOrderNum(row) {
+  // Try common column names for order number
+  for (const key of ['Номер заказа', 'Заказ', 'Номер', 'Заявка', '№ заказа', '№']) {
+    if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
+      return String(row[key]);
+    }
+  }
+  // Look for any column that starts with RU in value
+  for (const key of Object.keys(row)) {
+    const val = String(row[key] || '');
+    if (val.startsWith('RU') || val.startsWith('Ru')) return val;
+  }
+  // Look for a key that seems like order number
+  for (const key of Object.keys(row)) {
+    const kl = key.toLowerCase();
+    if (kl.includes('номер') || kl.includes('заказ') || kl.includes('заявк')) {
+      const val = row[key];
+      if (val !== null && val !== undefined && val !== '') return String(val);
+    }
+  }
+  return null;
+}
 
 export default function OrdersPage() {
   const { spbDetail, parsedFiles } = useData();
@@ -54,6 +86,10 @@ export default function OrdersPage() {
   const enriched = useMemo(() => {
     return spbDetail
       .map(row => {
+        const completed = isCompleted(row['Статус']);
+        if (completed) {
+          return { row, days: null, urgency: 'completed' };
+        }
         const days = daysSince(row['Дата создания']);
         const urgency = days !== null ? getUrgency(days) : null;
         return { row, days, urgency };
@@ -61,8 +97,8 @@ export default function OrdersPage() {
       .filter(r => r.urgency !== null);
   }, [spbDetail]);
 
-  // Filter overdue (>7 days) and all statuses
-  const overdue = useMemo(() => enriched.filter(r => r.urgency !== 'ok'), [enriched]);
+  // Overdue = non-completed and days > 7
+  const overdue = useMemo(() => enriched.filter(r => r.urgency !== 'ok' && r.urgency !== 'completed'), [enriched]);
 
   const allShown = useMemo(() => {
     let data = urgencyFilter === 'overdue' ? overdue : enriched;
@@ -72,16 +108,22 @@ export default function OrdersPage() {
     if (statusFilter) data = data.filter(r => String(r.row['Статус'] || '') === statusFilter);
     if (subdivFilter) data = data.filter(r => String(r.row['Подразделение'] || '') === subdivFilter);
     if (groupFilter)  data = data.filter(r => String(r.row['_productGroup'] || '') === groupFilter);
-    return data.sort((a, b) => (b.days || 0) - (a.days || 0));
+    return data.sort((a, b) => {
+      // Completed orders go to the bottom
+      if (a.urgency === 'completed' && b.urgency !== 'completed') return 1;
+      if (b.urgency === 'completed' && a.urgency !== 'completed') return -1;
+      return (b.days || 0) - (a.days || 0);
+    });
   }, [enriched, overdue, urgencyFilter, statusFilter, subdivFilter, groupFilter]);
 
   const counts = useMemo(() => ({
-    total:    enriched.length,
-    overdue:  overdue.length,
-    critical: enriched.filter(r => r.urgency === 'critical').length,
-    high:     enriched.filter(r => r.urgency === 'high').length,
-    medium:   enriched.filter(r => r.urgency === 'medium').length,
-    ok:       enriched.filter(r => r.urgency === 'ok').length,
+    total:     enriched.length,
+    completed: enriched.filter(r => r.urgency === 'completed').length,
+    overdue:   overdue.length,
+    critical:  enriched.filter(r => r.urgency === 'critical').length,
+    high:      enriched.filter(r => r.urgency === 'high').length,
+    medium:    enriched.filter(r => r.urgency === 'medium').length,
+    ok:        enriched.filter(r => r.urgency === 'ok').length,
   }), [enriched, overdue]);
 
   const statuses   = useMemo(() => [...new Set(spbDetail.map(r => r['Статус']).filter(Boolean))].sort(), [spbDetail]);
@@ -115,10 +157,10 @@ export default function OrdersPage() {
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { key: 'overdue',  label: 'Просроченных',    value: counts.overdue,  color: '#ef4444' },
-          { key: 'critical', label: 'Особо критично',  value: counts.critical, color: '#dc2626' },
-          { key: 'high',     label: 'Особый контроль', value: counts.high,     color: '#f97316' },
-          { key: 'medium',   label: 'На контроле',     value: counts.medium,   color: '#f59e0b' },
+          { key: 'completed', label: 'Выполнено',       value: counts.completed, color: '#16a34a' },
+          { key: 'overdue',   label: 'Просроченных',    value: counts.overdue,   color: '#ef4444' },
+          { key: 'critical',  label: 'Особо критично',  value: counts.critical,  color: '#dc2626' },
+          { key: 'high',      label: 'Особый контроль', value: counts.high,      color: '#f97316' },
         ].map(c => (
           <div key={c.key} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4"
             style={{ borderLeft: `4px solid ${c.color}` }}>
@@ -131,7 +173,7 @@ export default function OrdersPage() {
       {/* Legend */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <p className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">Критерии контроля</p>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
           {Object.entries(URGENCY_CONFIG).map(([key, cfg]) => (
             <div key={key} className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dot}`} />
@@ -147,12 +189,13 @@ export default function OrdersPage() {
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
         {[
-          { key: 'all',      label: `Все заказы (${counts.total})` },
-          { key: 'overdue',  label: `Просроченные (${counts.overdue})` },
-          { key: 'critical', label: `Особо критично (${counts.critical})` },
-          { key: 'high',     label: `Особый контроль (${counts.high})` },
-          { key: 'medium',   label: `Контроль (${counts.medium})` },
-          { key: 'ok',       label: `В работе (${counts.ok})` },
+          { key: 'all',       label: `Все заказы (${counts.total})` },
+          { key: 'overdue',   label: `Просроченные (${counts.overdue})` },
+          { key: 'critical',  label: `Особо критично (${counts.critical})` },
+          { key: 'high',      label: `Особый контроль (${counts.high})` },
+          { key: 'medium',    label: `Контроль (${counts.medium})` },
+          { key: 'ok',        label: `В работе (${counts.ok})` },
+          { key: 'completed', label: `Выполнено (${counts.completed})` },
         ].map(tab => (
           <button key={tab.key} onClick={() => setUrgencyFilter(tab.key)}
             className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
@@ -193,6 +236,7 @@ export default function OrdersPage() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Срочность</th>
+                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Номер заказа</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Дней</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Дата создания</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Статус</th>
@@ -200,19 +244,19 @@ export default function OrdersPage() {
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Магазин</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Куда перебрасываем</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Группа</th>
-                {/* Show all other detail columns dynamically */}
               </tr>
             </thead>
             <tbody>
               {allShown.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
-                    {urgencyFilter === 'ok' ? 'Нет заказов в работе' : 'Нет просроченных заказов — отлично!'}
+                  <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
+                    {urgencyFilter === 'ok' ? 'Нет заказов в работе' : urgencyFilter === 'completed' ? 'Нет выполненных заказов' : 'Нет просроченных заказов — отлично!'}
                   </td>
                 </tr>
               ) : allShown.map(({ row, days, urgency }, idx) => {
                 const cfg = URGENCY_CONFIG[urgency];
                 const IconComp = cfg.icon;
+                const orderNum = getOrderNum(row);
                 return (
                   <tr key={idx} className={`border-b border-gray-100 hover:bg-gray-50 ${cfg.bg}`}>
                     <td className="px-3 py-2 whitespace-nowrap">
@@ -222,13 +266,24 @@ export default function OrdersPage() {
                       </span>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
-                      <span className={`font-bold text-sm ${urgency === 'critical' ? 'text-red-700' : urgency === 'high' ? 'text-orange-600' : urgency === 'medium' ? 'text-amber-600' : 'text-green-600'}`}>
-                        {days}
-                      </span>
+                      {orderNum
+                        ? <span className="font-mono text-xs font-semibold text-gray-800">{orderNum}</span>
+                        : <span className="text-gray-300 text-xs">—</span>
+                      }
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {urgency === 'completed'
+                        ? <span className="text-green-600 text-xs">✓</span>
+                        : <span className={`font-bold text-sm ${urgency === 'critical' ? 'text-red-700' : urgency === 'high' ? 'text-orange-600' : urgency === 'medium' ? 'text-amber-600' : 'text-green-600'}`}>
+                            {days}
+                          </span>
+                      }
                     </td>
                     <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{row['Дата создания'] || '—'}</td>
                     <td className="px-3 py-2 whitespace-nowrap">
-                      <span className="text-gray-700">{row['Статус'] || '—'}</span>
+                      <span className={urgency === 'completed' ? 'text-green-700 font-medium' : 'text-gray-700'}>
+                        {row['Статус'] || '—'}
+                      </span>
                     </td>
                     <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{row['Подразделение'] || '—'}</td>
                     <td className="px-3 py-2 text-gray-700 whitespace-nowrap font-medium">{row['Магазин'] || '—'}</td>
