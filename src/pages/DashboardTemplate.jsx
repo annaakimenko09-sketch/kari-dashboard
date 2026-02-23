@@ -1,19 +1,10 @@
 /**
  * Shared dashboard template for Obuv and Kids
- * Props:
- *   summary        - store-level rows for this product group
- *   regionTotals   - ИТОГО rows per region for this product group
- *   parsedFiles    - raw parsed files (for period badge)
- *   accentColor    - brand color string e.g. '#E91E8C'
- *   groupLabel     - 'Обувь' | 'Кидс'
- *   navigate       - react-router navigate fn
- *   controlPath    - path to control page e.g. '/obuv/control'
- *   vyvozPath      - path to vyvoz page
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { getField, getNum } from '../utils/excelParser';
-import { Truck, Package, AlertTriangle, CheckCircle, TrendingDown, Upload } from 'lucide-react';
+import { Truck, Package, AlertTriangle, CheckCircle, TrendingDown, Upload, ChevronUp, ChevronDown } from 'lucide-react';
 
 function KpiCard({ title, value, subtitle, icon: Icon, accentColor, accent = false, onClick }) {
   return (
@@ -74,8 +65,33 @@ function Tab({ active, onClick, children, accentColor }) {
   );
 }
 
-function PctBadge({ pct }) {
+// Sortable table header cell
+function SortTh({ label, colKey, sortKey, sortDir, onSort, className = '' }) {
+  const active = sortKey === colKey;
+  return (
+    <th
+      className={`px-2 py-2 text-left font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 ${className}`}
+      onClick={() => onSort(colKey)}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        {active
+          ? (sortDir === 'asc' ? <ChevronUp size={11} className="text-gray-500" /> : <ChevronDown size={11} className="text-gray-500" />)
+          : <ChevronDown size={10} className="text-gray-300" />
+        }
+      </div>
+    </th>
+  );
+}
+
+function PctBadgeShip({ pct }) {
   const color = pct >= 90 ? 'bg-green-100 text-green-700' : pct >= 70 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
+  return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${color}`}>{pct.toFixed(1)}%</span>;
+}
+
+// Writeoff: higher = worse = more red
+function PctBadgeWriteoff({ pct }) {
+  const color = pct <= 5 ? 'bg-green-100 text-green-700' : pct <= 15 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
   return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${color}`}>{pct.toFixed(1)}%</span>;
 }
 
@@ -102,11 +118,16 @@ const ALL_COLUMNS = [
 function renderTableCell(row, col) {
   const val = getField(row, col.key);
   if (val === null || val === undefined) return <span className="text-gray-300 text-xs">—</span>;
+  if (col.key.includes('Вычерк') && col.key.endsWith('%')) {
+    const n = parseFloat(val);
+    if (!isNaN(n)) return <PctBadgeWriteoff pct={n} />;
+  }
   if (col.key.endsWith('%')) {
     const n = parseFloat(val);
     if (!isNaN(n)) {
-      const isGood = col.key.includes('Отгружено') ? n >= 90 : n <= 5;
-      const isWarn = col.key.includes('Отгружено') ? n >= 70 : n <= 15;
+      const isShipPct = col.key.includes('Отгружено');
+      const isGood = isShipPct ? n >= 90 : n <= 5;
+      const isWarn = isShipPct ? n >= 70 : n <= 15;
       const color = isGood ? 'bg-green-100 text-green-700' : isWarn ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
       return <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${color}`}>{n.toFixed(1)}%</span>;
     }
@@ -114,6 +135,30 @@ function renderTableCell(row, col) {
   const n = parseFloat(val);
   if (!isNaN(n)) return <span className="text-xs text-gray-700">{n.toLocaleString('ru-RU')}</span>;
   return <span className="text-xs text-gray-700">{val}</span>;
+}
+
+function useSortState(defaultKey = '', defaultDir = 'desc') {
+  const [sortKey, setSortKey] = useState(defaultKey);
+  const [sortDir, setSortDir] = useState(defaultDir);
+  const handleSort = useCallback((key) => {
+    setSortKey(prev => {
+      if (prev === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+      else { setSortDir('desc'); }
+      return key;
+    });
+  }, []);
+  const sortFn = useCallback((arr) => {
+    if (!sortKey) return arr;
+    return [...arr].sort((a, b) => {
+      const av = a[sortKey] ?? 0, bv = b[sortKey] ?? 0;
+      const an = parseFloat(av), bn = parseFloat(bv);
+      if (!isNaN(an) && !isNaN(bn)) return sortDir === 'asc' ? an - bn : bn - an;
+      return sortDir === 'asc'
+        ? String(av).localeCompare(String(bv), 'ru')
+        : String(bv).localeCompare(String(av), 'ru');
+    });
+  }, [sortKey, sortDir]);
+  return { sortKey, sortDir, handleSort, sortFn };
 }
 
 export default function DashboardTemplate({
@@ -131,43 +176,48 @@ export default function DashboardTemplate({
   const [storeRegionFilter, setStoreRegionFilter] = useState('');
   const [storeSubdivFilter, setStoreSubdivFilter] = useState('');
 
-  // Filter only SPB+BEL stores for subdivision detail
-  const spbBelSummary = useMemo(() => summary.filter(row => {
+  // Sort states for region and subdivision tables
+  const regionSort = useSortState('shipped', 'desc');
+  const subdivSort = useSortState('shipped', 'desc');
+
+  // Filter only SPB stores for subdivision detail
+  const spbSummary = useMemo(() => summary.filter(row => {
     const region = String(row['Регион'] || '').toUpperCase();
-    return region.includes('СПБ') || region.includes('БЕЛ') || region.includes('SPB') || region.includes('BEL');
+    return region.includes('СПБ') || region.includes('SPB');
   }), [summary]);
 
   const kpi = useMemo(() => {
-    // Use regionTotals for accurate KPI numbers
     const sumTotals = (key) => regionTotals.reduce((s, r) => s + getNum(r, key), 0);
     const sumAll = (key) => summary.reduce((s, r) => s + getNum(r, key), 0);
 
-    const hasRegionTotals = regionTotals.length > 0;
-    const totalToShip    = hasRegionTotals ? sumTotals('Всего к вывозу шт')         : sumAll('Всего к вывозу шт');
-    const totalShipped   = hasRegionTotals ? sumTotals('Отгружено шт')              : sumAll('Отгружено шт');
-    const totalReceived  = hasRegionTotals ? sumTotals('Получено шт')               : sumAll('Получено шт');
-    const totalReturn    = hasRegionTotals ? sumTotals('Возврат от агрегатора шт')  : sumAll('Возврат от агрегатора шт');
-    const totalWriteoff  = hasRegionTotals ? sumTotals('Вычерк шт')                : sumAll('Вычерк шт');
-    const totalShipments = hasRegionTotals ? sumTotals('Кол-во вывозов')            : sumAll('Кол-во вывозов');
-    const totalRemaining = hasRegionTotals ? sumTotals('Осталось отгрузить пар шт') : sumAll('Осталось отгрузить пар шт');
+    const hasRT = regionTotals.length > 0;
+    const totalToShip    = hasRT ? sumTotals('Всего к вывозу шт')         : sumAll('Всего к вывозу шт');
+    const totalShipped   = hasRT ? sumTotals('Отгружено шт')              : sumAll('Отгружено шт');
+    const totalReceived  = hasRT ? sumTotals('Получено шт')               : sumAll('Получено шт');
+    const totalReturn    = hasRT ? sumTotals('Возврат от агрегатора шт')  : sumAll('Возврат от агрегатора шт');
+    const totalWriteoff  = hasRT ? sumTotals('Вычерк шт')                : sumAll('Вычерк шт');
+    const totalShipments = hasRT ? sumTotals('Кол-во вывозов')            : sumAll('Кол-во вывозов');
+    const totalRemaining = hasRT ? sumTotals('Осталось отгрузить пар шт') : sumAll('Осталось отгрузить пар шт');
     const avgPct = totalToShip > 0 ? (totalShipped / totalToShip * 100) : 0;
 
-    const problemStores = spbBelSummary.filter(r => {
+    const problemStores = spbSummary.filter(r => {
       const sp = getNum(r, 'Отгружено товара %');
       const wp = getNum(r, 'Вычерк по сборке %');
       return (sp > 0 && sp < 80) || wp > 15;
     }).length;
 
-    // Group by helper
+    // Group by helper — accumulates all needed fields
     const groupBy = (data, key) => {
       const map = {};
       data.forEach(r => {
         const k = String(r[key] || getField(r, key) || 'Неизвестно');
-        if (!map[k]) map[k] = { name: k, shipped: 0, toShip: 0, received: 0, shipments: 0, stores: new Set() };
+        if (!map[k]) map[k] = { name: k, shipped: 0, toShip: 0, received: 0, shipments: 0, remaining: 0, writeoff: 0, stores: new Set() };
         map[k].shipped   += getNum(r, 'Отгружено шт');
         map[k].toShip    += getNum(r, 'Всего к вывозу шт');
         map[k].received  += getNum(r, 'Получено шт');
         map[k].shipments += getNum(r, 'Кол-во вывозов');
+        map[k].remaining += getNum(r, 'Осталось отгрузить пар шт');
+        map[k].writeoff  += getNum(r, 'Вычерк шт');
         map[k].stores.add(r['Магазин']);
       });
       return Object.values(map)
@@ -175,19 +225,20 @@ export default function DashboardTemplate({
         .sort((a, b) => b.shipped - a.shipped);
     };
 
-    // Region data — use regionTotals if available, else store-level groupBy
+    // Region data from regionTotals (accurate ИТОГО rows)
     let byRegion;
-    if (hasRegionTotals) {
+    if (hasRT) {
       const rmap = {};
       regionTotals.forEach(r => {
         const k = String(r['Регион'] || 'Неизвестно');
-        if (!rmap[k]) rmap[k] = { name: k, shipped: 0, toShip: 0, received: 0, shipments: 0, storeCount: 0 };
+        if (!rmap[k]) rmap[k] = { name: k, shipped: 0, toShip: 0, received: 0, shipments: 0, remaining: 0, writeoff: 0, storeCount: 0 };
         rmap[k].shipped   += getNum(r, 'Отгружено шт');
         rmap[k].toShip    += getNum(r, 'Всего к вывозу шт');
         rmap[k].received  += getNum(r, 'Получено шт');
         rmap[k].shipments += getNum(r, 'Кол-во вывозов');
+        rmap[k].remaining += getNum(r, 'Осталось отгрузить пар шт');
+        rmap[k].writeoff  += getNum(r, 'Вычерк шт');
       });
-      // store count from summary
       const storeCounts = {};
       summary.forEach(r => {
         const k = String(r['Регион'] || 'Неизвестно');
@@ -198,7 +249,7 @@ export default function DashboardTemplate({
         ...r,
         storeCount: storeCounts[r.name]?.size || 0,
         pct: r.toShip > 0 ? r.shipped / r.toShip * 100 : 0,
-      })).sort((a, b) => b.shipped - a.shipped);
+      }));
     } else {
       byRegion = groupBy(summary, 'Регион');
     }
@@ -206,12 +257,12 @@ export default function DashboardTemplate({
     return {
       totalToShip, totalShipped, totalReceived, totalReturn, totalWriteoff,
       totalShipments, totalRemaining, avgPct, problemStores,
-      storesCount: new Set(spbBelSummary.map(r => r['Магазин'])).size,
+      storesCount: new Set(spbSummary.map(r => r['Магазин'])).size,
       byRegion,
-      bySubdivision: groupBy(spbBelSummary, 'Подразделение'),
+      bySubdivision: groupBy(spbSummary, 'Подразделение'),
       byProductGroup: groupBy(summary, '_productGroup'),
     };
-  }, [summary, regionTotals, spbBelSummary]);
+  }, [summary, regionTotals, spbSummary]);
 
   if (!parsedFiles.length) {
     return (
@@ -240,7 +291,7 @@ export default function DashboardTemplate({
 
   // Store table filtered
   const storeRegions = [...new Set(summary.map(r => r['Регион']).filter(Boolean))].sort();
-  const storeSubdivs = [...new Set(spbBelSummary.map(r => r['Подразделение']).filter(Boolean))].sort();
+  const storeSubdivs = [...new Set(spbSummary.map(r => r['Подразделение']).filter(Boolean))].sort();
 
   const storeRows = useMemo(() => {
     let data = summary;
@@ -252,6 +303,21 @@ export default function DashboardTemplate({
     }
     return data;
   }, [summary, storeRegionFilter, storeSubdivFilter, storeSearch]);
+
+  // Sorted region and subdivision data
+  const sortedRegions = regionSort.sortFn(kpi.byRegion);
+  const sortedSubdivs = subdivSort.sortFn(kpi.bySubdivision);
+
+  // Table column definitions for region/subdiv
+  const groupTableCols = [
+    { key: 'toShip',    label: 'К вывозу' },
+    { key: 'shipped',   label: 'Отгружено' },
+    { key: 'pct',       label: '% отгр.' },
+    { key: 'received',  label: 'Получено' },
+    { key: 'remaining', label: 'Остаток' },
+    { key: 'writeoff',  label: 'Вычерк шт' },
+    { key: 'storeCount',label: 'Маг.' },
+  ];
 
   return (
     <div className="space-y-5">
@@ -304,62 +370,69 @@ export default function DashboardTemplate({
 
       {/* Region + Subdivision tables */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* By region */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
           <SectionTitle accentColor={accentColor}>По регионам — все данные</SectionTitle>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b-2 text-gray-500" style={{ borderColor: `${accentColor}30` }}>
-                  <th className="pb-2 text-left font-semibold">Регион</th>
-                  <th className="pb-2 text-right font-semibold">К вывозу</th>
-                  <th className="pb-2 text-right font-semibold">Отгружено</th>
-                  <th className="pb-2 text-right font-semibold">%</th>
-                  <th className="pb-2 text-right font-semibold">Маг.</th>
+                  <SortTh label="Регион"    colKey="name"       sortKey={regionSort.sortKey} sortDir={regionSort.sortDir} onSort={regionSort.handleSort} />
+                  {groupTableCols.map(c => (
+                    <SortTh key={c.key} label={c.label} colKey={c.key} sortKey={regionSort.sortKey} sortDir={regionSort.sortDir} onSort={regionSort.handleSort} className="text-right" />
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {kpi.byRegion.map(r => (
+                {sortedRegions.map(r => (
                   <tr key={r.name} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                    <td className="py-1.5 font-medium text-gray-800">{r.name}</td>
+                    <td className="py-1.5 pr-2 font-medium text-gray-800 whitespace-nowrap">{r.name}</td>
                     <td className="py-1.5 text-right text-gray-600">{r.toShip.toLocaleString('ru-RU')}</td>
                     <td className="py-1.5 text-right font-semibold text-gray-900">{r.shipped.toLocaleString('ru-RU')}</td>
-                    <td className="py-1.5 text-right"><PctBadge pct={r.pct} /></td>
+                    <td className="py-1.5 text-right"><PctBadgeShip pct={r.pct} /></td>
+                    <td className="py-1.5 text-right text-gray-600">{r.received.toLocaleString('ru-RU')}</td>
+                    <td className="py-1.5 text-right text-gray-600">{r.remaining.toLocaleString('ru-RU')}</td>
+                    <td className="py-1.5 text-right text-gray-600">{r.writeoff.toLocaleString('ru-RU')}</td>
                     <td className="py-1.5 text-right text-gray-500">{r.storeCount}</td>
                   </tr>
                 ))}
-                {kpi.byRegion.length === 0 && (
-                  <tr><td colSpan={5} className="py-4 text-center text-gray-400">Нет данных</td></tr>
+                {sortedRegions.length === 0 && (
+                  <tr><td colSpan={8} className="py-4 text-center text-gray-400">Нет данных</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
 
+        {/* By subdivision */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
           <SectionTitle accentColor={accentColor}>По подразделениям — СПБ</SectionTitle>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b-2 text-gray-500" style={{ borderColor: `${accentColor}30` }}>
-                  <th className="pb-2 text-left font-semibold">Подразделение</th>
-                  <th className="pb-2 text-right font-semibold">К вывозу</th>
-                  <th className="pb-2 text-right font-semibold">Отгружено</th>
-                  <th className="pb-2 text-right font-semibold">%</th>
-                  <th className="pb-2 text-right font-semibold">Маг.</th>
+                  <SortTh label="Подразделение" colKey="name"       sortKey={subdivSort.sortKey} sortDir={subdivSort.sortDir} onSort={subdivSort.handleSort} />
+                  {groupTableCols.map(c => (
+                    <SortTh key={c.key} label={c.label} colKey={c.key} sortKey={subdivSort.sortKey} sortDir={subdivSort.sortDir} onSort={subdivSort.handleSort} className="text-right" />
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {kpi.bySubdivision.map(r => (
+                {sortedSubdivs.map(r => (
                   <tr key={r.name} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                    <td className="py-1.5 font-medium text-gray-800">{r.name}</td>
+                    <td className="py-1.5 pr-2 font-medium text-gray-800 whitespace-nowrap">{r.name}</td>
                     <td className="py-1.5 text-right text-gray-600">{r.toShip.toLocaleString('ru-RU')}</td>
                     <td className="py-1.5 text-right font-semibold text-gray-900">{r.shipped.toLocaleString('ru-RU')}</td>
-                    <td className="py-1.5 text-right"><PctBadge pct={r.pct} /></td>
+                    <td className="py-1.5 text-right"><PctBadgeShip pct={r.pct} /></td>
+                    <td className="py-1.5 text-right text-gray-600">{r.received.toLocaleString('ru-RU')}</td>
+                    <td className="py-1.5 text-right text-gray-600">{r.remaining.toLocaleString('ru-RU')}</td>
+                    <td className="py-1.5 text-right text-gray-600">{r.writeoff.toLocaleString('ru-RU')}</td>
                     <td className="py-1.5 text-right text-gray-500">{r.storeCount}</td>
                   </tr>
                 ))}
-                {kpi.bySubdivision.length === 0 && (
-                  <tr><td colSpan={5} className="py-4 text-center text-gray-400">Нет данных для СПБ</td></tr>
+                {sortedSubdivs.length === 0 && (
+                  <tr><td colSpan={8} className="py-4 text-center text-gray-400">Нет данных для СПБ</td></tr>
                 )}
               </tbody>
             </table>
@@ -378,7 +451,6 @@ export default function DashboardTemplate({
               value={storeSearch}
               onChange={e => setStoreSearch(e.target.value)}
               className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1"
-              style={{ '--tw-ring-color': accentColor }}
             />
             <select
               value={storeRegionFilter}
@@ -416,7 +488,7 @@ export default function DashboardTemplate({
               ) : storeRows.map((row, idx) => {
                 const sp = getNum(row, 'Отгружено товара %');
                 const wp = getNum(row, 'Вычерк по сборке %');
-                const isProblem = sp > 0 && sp < 80 || wp > 15;
+                const isProblem = (sp > 0 && sp < 80) || wp > 15;
                 return (
                   <tr key={idx} className={`border-b border-gray-50 hover:bg-gray-50 ${isProblem ? 'bg-red-50/30' : ''}`}>
                     <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{row['Регион'] || '—'}</td>

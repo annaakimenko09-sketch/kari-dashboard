@@ -12,11 +12,13 @@ const pageTitles = {
   '/kids/vyvoz':   'Вывозы — Кидс',
   '/kids/control': 'Контроль — Кидс',
   '/orders':       'Контроль заказов',
+  '/acceptance':   'Приёмка',
   '/upload':       'Загрузить данные',
 };
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const location = useLocation();
   const { parsedFiles } = useData();
 
@@ -24,7 +26,12 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden" translate="no">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(c => !c)}
+      />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Red accent bar at top */}
@@ -55,9 +62,7 @@ export default function Layout() {
           </div>
 
           {/* Right side */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <img src="/kari-logo.svg" alt="KARI" className="w-7 h-7 object-contain hidden sm:block" />
-          </div>
+          <div className="flex items-center gap-2 flex-shrink-0" />
         </header>
 
         {/* Main content */}

@@ -4,10 +4,19 @@ import { getField, getNum } from '../utils/excelParser';
 import { Search, X, ChevronUp, ChevronDown, Upload, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
+// Higher value = better (e.g. % shipped)
 function PctBadge({ value, good, warn }) {
   const n = parseFloat(value);
   if (value === null || value === undefined || isNaN(n)) return <span className="text-gray-400 text-xs">—</span>;
   const cls = n >= good ? 'bg-green-100 text-green-700' : n >= warn ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
+  return <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${cls}`}>{n.toFixed(1)}%</span>;
+}
+
+// Higher value = worse (e.g. writeoff %, return %)
+function PctBadgeBad({ value, okMax, warnMax }) {
+  const n = parseFloat(value);
+  if (value === null || value === undefined || isNaN(n)) return <span className="text-gray-400 text-xs">—</span>;
+  const cls = n <= okMax ? 'bg-green-100 text-green-700' : n <= warnMax ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
   return <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${cls}`}>{n.toFixed(1)}%</span>;
 }
 
@@ -41,7 +50,7 @@ const COLUMNS = [
 function renderCell(row, col) {
   const val = getField(row, col.key);
   if (col.type === 'pct_ship') return <PctBadge value={val} good={90} warn={70} />;
-  if (col.type === 'pct_bad')  return <PctBadge value={val} good={5} warn={15} />;
+  if (col.type === 'pct_bad')  return <PctBadgeBad value={val} okMax={5} warnMax={15} />;
   if (col.type === 'num')      return <NumCell value={val} />;
   return <span className="text-gray-700 text-xs">{val ?? '—'}</span>;
 }

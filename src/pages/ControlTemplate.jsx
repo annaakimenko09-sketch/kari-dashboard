@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, AlertCircle, CheckCircle, Upload, Filter } from 'lucide-react';
-import { getField, getNum } from '../utils/excelParser';
+import { AlertTriangle, AlertCircle, CheckCircle, Upload, X, Package, ChevronRight } from 'lucide-react';
+import { getNum } from '../utils/excelParser';
+import { useData } from '../context/DataContext';
 
 const PROBLEM_TYPES = {
   low_shipped:    { label: 'Отгр. < 70%',    color: 'red',   description: 'Низкий % отгрузки' },
@@ -41,10 +42,230 @@ function ProblemBadge({ type }) {
   );
 }
 
-export default function ControlTemplate({ summary, parsedFiles, accentColor }) {
+// Classify order status
+function classifyStatus(status) {
+  if (!status) return 'active';
+  const s = String(status).toLowerCase();
+  if (s.includes('отмен') || s.includes('cancel')) return 'cancelled';
+  if (s.includes('выполн') || s.includes('доставл') || s.includes('complete') || s.includes('done')) return 'completed';
+  return 'active';
+}
+
+function getOrderStatusStyle(status) {
+  const cls = classifyStatus(status);
+  if (cls === 'cancelled') return 'bg-gray-100 text-gray-500 line-through';
+  if (cls === 'completed') return 'bg-green-50 text-green-700';
+  return 'bg-blue-50 text-blue-700';
+}
+
+// Find order number field
+function getOrderNum(row) {
+  for (const key of Object.keys(row)) {
+    const v = String(row[key] || '');
+    if (v.startsWith('RU') || v.startsWith('Ru')) return v;
+  }
+  // fallback: look for номер/заказ columns
+  for (const key of Object.keys(row)) {
+    const k = key.toLowerCase();
+    if (k.includes('номер') || k.includes('заказ') || k.includes('order')) {
+      const v = String(row[key] || '');
+      if (v && v !== '0' && v !== 'undefined') return v;
+    }
+  }
+  return '—';
+}
+
+// Find date field
+function getOrderDate(row) {
+  for (const key of Object.keys(row)) {
+    const k = key.toLowerCase();
+    if (k.includes('дата') || k.includes('date')) {
+      const v = row[key];
+      if (!v) continue;
+      if (v instanceof Date) {
+        return v.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      }
+      const s = String(v);
+      if (s && s !== '0') return s;
+    }
+  }
+  return '—';
+}
+
+// Find qty field
+function getOrderQty(row) {
+  for (const key of Object.keys(row)) {
+    const k = key.toLowerCase();
+    if (k.includes('количество') || k.includes('кол-во') || k.includes('qty') || k.includes('пар')) {
+      const n = getNum(row, key);
+      if (n > 0) return n;
+    }
+  }
+  return 0;
+}
+
+// Find destination field
+function getOrderDest(row) {
+  for (const key of Object.keys(row)) {
+    const k = key.toLowerCase();
+    if (k.includes('куда') || k.includes('направл') || k.includes('dest')) {
+      const v = String(row[key] || '').trim();
+      if (v && v !== '0') return v;
+    }
+  }
+  return '—';
+}
+
+// Find status field
+function getOrderStatus(row) {
+  for (const key of Object.keys(row)) {
+    const k = key.toLowerCase();
+    if (k.includes('статус') || k.includes('status')) {
+      const v = String(row[key] || '').trim();
+      if (v && v !== '0') return v;
+    }
+  }
+  return '—';
+}
+
+// Find shipped qty
+function getOrderShipped(row) {
+  for (const key of Object.keys(row)) {
+    const k = key.toLowerCase();
+    if ((k.includes('отгруж') || k.includes('shipped')) && (k.includes('шт') || k.includes('кол') || k.includes('qty') || k.includes('пар'))) {
+      const n = getNum(row, key);
+      if (n > 0) return n;
+    }
+  }
+  return 0;
+}
+
+// Store Detail Modal
+function StoreModal({ storeName, detailData, accentColor, onClose, productGroup }) {
+  const storeOrders = useMemo(() => {
+    return detailData.filter(row => {
+      const shop = String(row['Магазин'] || row['магазин'] || '').trim();
+      return shop === storeName;
+    });
+  }, [detailData, storeName]);
+
+  const totalQty = useMemo(() => storeOrders.reduce((s, r) => s + getOrderQty(r), 0), [storeOrders]);
+  const totalShipped = useMemo(() => storeOrders.reduce((s, r) => s + getOrderShipped(r), 0), [storeOrders]);
+  const cancelledCount = useMemo(() => storeOrders.filter(r => classifyStatus(getOrderStatus(r)) === 'cancelled').length, [storeOrders]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        style={{ maxHeight: '90vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Modal header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 className="font-bold text-gray-900 text-base leading-tight">{storeName}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{productGroup} · {storeOrders.length} заказов</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Summary row */}
+        <div className="grid grid-cols-3 gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
+          {[
+            { label: 'Всего заказов', value: storeOrders.length, unit: 'шт' },
+            { label: 'К вывозу', value: totalQty.toLocaleString('ru-RU'), unit: 'пар' },
+            { label: 'Отгружено', value: totalShipped.toLocaleString('ru-RU'), unit: 'пар' },
+          ].map(m => (
+            <div key={m.label} className="text-center">
+              <div className="text-xs text-gray-500">{m.label}</div>
+              <div className="font-bold text-gray-900 text-sm">{m.value} <span className="font-normal text-gray-400 text-xs">{m.unit}</span></div>
+            </div>
+          ))}
+        </div>
+
+        {cancelledCount > 0 && (
+          <div className="px-5 py-2 bg-gray-50 border-b border-gray-100 flex-shrink-0">
+            <span className="text-xs text-gray-500">Отменено: <span className="font-semibold text-gray-700">{cancelledCount}</span> заказ(ов)</span>
+          </div>
+        )}
+
+        {/* Orders list */}
+        <div className="overflow-y-auto flex-1">
+          {storeOrders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Package size={32} className="text-gray-300 mb-3" />
+              <p className="text-gray-500 text-sm">Нет данных по заказам этого магазина</p>
+              <p className="text-gray-400 text-xs mt-1">Детализация не содержит записей для «{storeName}»</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100 sticky top-0">
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Заказ</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Дата</th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Кол-во</th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Отгр.</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Куда</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Статус</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {storeOrders.map((row, i) => {
+                  const orderNum = getOrderNum(row);
+                  const date = getOrderDate(row);
+                  const qty = getOrderQty(row);
+                  const shipped = getOrderShipped(row);
+                  const dest = getOrderDest(row);
+                  const status = getOrderStatus(row);
+                  const statusCls = classifyStatus(status);
+
+                  return (
+                    <tr key={i} className={`hover:bg-gray-50 transition-colors ${statusCls === 'cancelled' ? 'opacity-60' : ''}`}>
+                      <td className="px-4 py-2.5">
+                        <span className={`font-mono text-xs font-semibold ${statusCls === 'cancelled' ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                          {orderNum}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{date}</td>
+                      <td className="px-3 py-2.5 text-xs text-right font-semibold text-gray-800">
+                        {qty > 0 ? qty.toLocaleString('ru-RU') : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-right font-semibold text-gray-800">
+                        {shipped > 0 ? shipped.toLocaleString('ru-RU') : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-gray-500 hidden sm:table-cell max-w-[100px] truncate">{dest}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${getOrderStatusStyle(status)}`}>
+                          {statusCls === 'cancelled' ? 'Отменён' : statusCls === 'completed' ? 'Выполнен' : status !== '—' ? status : 'Активен'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function ControlTemplate({ summary, parsedFiles, accentColor, productGroup }) {
   const navigate = useNavigate();
+  const { detailData } = useData();
   const [activeFilter, setActiveFilter] = useState('all');
   const [subdivFilter, setSubdivFilter] = useState('');
+  const [selectedStore, setSelectedStore] = useState(null);
 
   // Filter only SPB+BEL
   const spbBelSummary = useMemo(() => summary.filter(row => {
@@ -83,6 +304,13 @@ export default function ControlTemplate({ summary, parsedFiles, accentColor }) {
     info:     problems.filter(p => p.severity === 'info').length,
   }), [problems]);
 
+  // Filter detail data for this product group
+  const filteredDetail = useMemo(() => {
+    if (!productGroup) return detailData;
+    if (productGroup === 'Обувь') return detailData.filter(r => r._productGroup === 'Обувь');
+    return detailData.filter(r => r._productGroup !== 'Обувь');
+  }, [detailData, productGroup]);
+
   if (!parsedFiles.length) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -117,10 +345,10 @@ export default function ControlTemplate({ summary, parsedFiles, accentColor }) {
       {/* Filter tabs */}
       <div className="flex flex-wrap gap-2">
         {[
-          { key: 'all',      label: `Все (${counts.all})`,                  color: 'gray' },
-          { key: 'critical', label: `Критические (${counts.critical})`,     color: 'red' },
-          { key: 'warning',  label: `Предупреждения (${counts.warning})`,   color: 'amber' },
-          { key: 'info',     label: `Информационные (${counts.info})`,      color: 'blue' },
+          { key: 'all',      label: `Все (${counts.all})` },
+          { key: 'critical', label: `Критические (${counts.critical})` },
+          { key: 'warning',  label: `Предупреждения (${counts.warning})` },
+          { key: 'info',     label: `Информационные (${counts.info})` },
         ].map(tab => (
           <button key={tab.key} onClick={() => setActiveFilter(tab.key)}
             className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
@@ -158,15 +386,23 @@ export default function ControlTemplate({ summary, parsedFiles, accentColor }) {
           const rem = getNum(row, 'Осталось отгрузить пар шт');
           const shipped  = getNum(row, 'Отгружено шт');
           const toShip   = getNum(row, 'Всего к вывозу шт');
+          const storeName = row['Магазин'] || '—';
 
           return (
-            <div key={idx} className={`rounded-xl border p-4 ${sv.bg} ${sv.border}`}>
+            <div
+              key={idx}
+              className={`rounded-xl border p-4 ${sv.bg} ${sv.border} cursor-pointer hover:shadow-md transition-shadow`}
+              onClick={() => setSelectedStore(storeName)}
+            >
               <div className="flex items-start gap-3">
                 <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${sv.dot}`} />
                 <div className="flex-1">
                   <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className="font-semibold text-gray-900 text-sm">{row['Магазин'] || '—'}</span>
+                    <span className="font-semibold text-gray-900 text-sm">{storeName}</span>
                     <span className="text-gray-500 text-xs">{row['ТЦ'] || ''}</span>
+                    <span className="ml-auto flex items-center gap-1 text-xs text-gray-400">
+                      Подробнее <ChevronRight size={12} />
+                    </span>
                   </div>
                   <div className="text-xs text-gray-500 mb-2">
                     {row['Подразделение'] || ''} · {row['_productGroup']} · {row['Регион']}
@@ -197,6 +433,17 @@ export default function ControlTemplate({ summary, parsedFiles, accentColor }) {
           );
         })}
       </div>
+
+      {/* Store detail modal */}
+      {selectedStore && (
+        <StoreModal
+          storeName={selectedStore}
+          detailData={filteredDetail}
+          accentColor={accentColor}
+          productGroup={productGroup}
+          onClose={() => setSelectedStore(null)}
+        />
+      )}
     </div>
   );
 }
