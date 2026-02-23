@@ -348,19 +348,22 @@ export default function ControlTemplate({ summary, parsedFiles, accentColor, pro
       {/* Filter tabs */}
       <div className="flex flex-wrap gap-2">
         {[
-          { key: 'all',      label: `Все (${counts.all})` },
-          { key: 'critical', label: `Критические (${counts.critical})` },
-          { key: 'warning',  label: `Предупреждения (${counts.warning})` },
-          { key: 'info',     label: `Информационные (${counts.info})` },
+          { key: 'all',      label: `Все (${counts.all})`,                     desc: null },
+          { key: 'critical', label: `Критические (${counts.critical})`,         desc: 'Отгр. < 70% или Вычерк > 15%' },
+          { key: 'warning',  label: `Предупреждения (${counts.warning})`,       desc: 'Отгр. 70–80% или Возврат > 15%' },
+          { key: 'info',     label: `Информационные (${counts.info})`,          desc: 'Остаток > 0' },
         ].map(tab => (
           <button key={tab.key} onClick={() => setActiveFilter(tab.key)}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex flex-col items-start leading-tight"
             style={activeFilter === tab.key
               ? { backgroundColor: accentColor, color: 'white' }
               : { backgroundColor: 'white', border: '1px solid #e5e7eb', color: '#4b5563' }
             }
           >
-            {tab.label}
+            <span>{tab.label}</span>
+            {tab.desc && (
+              <span className="text-xs font-normal mt-0.5" style={{ opacity: 0.7 }}>{tab.desc}</span>
+            )}
           </button>
         ))}
 
