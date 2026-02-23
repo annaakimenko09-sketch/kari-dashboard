@@ -257,6 +257,21 @@ export default function OrdersPage() {
   const subdivs  = useMemo(() => [...new Set(spbDetail.map(r => r['Подразделение']).filter(Boolean))].sort(), [spbDetail]);
   const groups   = useMemo(() => [...new Set(spbDetail.map(r => r['_productGroup']).filter(Boolean))].sort(), [spbDetail]);
 
+  // Unique sorted dates from real data (for dropdown)
+  const availableDates = useMemo(() => {
+    const seen = new Set();
+    spbDetail.forEach(r => {
+      const raw = r['Дата создания'];
+      if (!raw) return;
+      const d = parseDate(raw);
+      if (!d) return;
+      // Normalise to YYYY-MM-DD for <select> value
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      seen.add(key);
+    });
+    return [...seen].sort(); // ascending
+  }, [spbDetail]);
+
   if (!parsedFiles.length) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -400,12 +415,18 @@ export default function OrdersPage() {
 
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-gray-500 whitespace-nowrap">Дата создания от:</span>
-          <input
-            type="date"
+          <select
             value={dateFrom}
             onChange={e => setDateFrom(e.target.value)}
             className="px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
-          />
+          >
+            <option value="">Все даты</option>
+            {availableDates.map(d => {
+              // Display as DD.MM.YYYY
+              const [y, m, day] = d.split('-');
+              return <option key={d} value={d}>{`${day}.${m}.${y}`}</option>;
+            })}
+          </select>
           {dateFrom && (
             <button onClick={() => setDateFrom('')} className="p-1 text-gray-400 hover:text-gray-600">
               <X size={14} />
