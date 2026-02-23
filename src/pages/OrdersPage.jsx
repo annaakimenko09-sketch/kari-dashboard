@@ -227,14 +227,14 @@ export default function OrdersPage() {
     if (subdivFilter) data = data.filter(r => String(r.row['Подразделение'] || '') === subdivFilter);
     if (groupFilter)  data = data.filter(r => String(r.row['_productGroup'] || '') === groupFilter);
     if (dateFrom) {
-      // Compare as YYYY-MM-DD strings to avoid UTC offset issues
+      // Show only exact date match
       data = data.filter(r => {
         const raw = r.row['Дата создания'];
         if (!raw) return false;
         const d = parseDate(raw);
         if (!d) return false;
         const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-        return key >= dateFrom;
+        return key === dateFrom;
       });
     }
     return data.sort((a, b) => {
@@ -419,7 +419,7 @@ export default function OrdersPage() {
         </select>
 
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500 whitespace-nowrap">Дата создания от:</span>
+          <span className="text-xs text-gray-500 whitespace-nowrap">Дата создания:</span>
           <select
             value={dateFrom}
             onChange={e => setDateFrom(e.target.value)}
