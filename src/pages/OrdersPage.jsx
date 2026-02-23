@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { useNavigate } from 'react-router-dom';
-import { Upload, Clock, AlertTriangle, AlertCircle, CheckCircle, XCircle, X } from 'lucide-react';
+import { Upload, Clock, AlertTriangle, AlertCircle, CheckCircle, XCircle, X, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 function parseDate(val) {
   if (!val) return null;
@@ -40,14 +41,36 @@ function getUrgency(days) {
 }
 
 const URGENCY_CONFIG = {
-  completed: { label: 'Выполнено',      bg: 'bg-green-50',  badge: 'bg-green-100 text-green-700',   dot: 'bg-green-600',  icon: CheckCircle,   days: 'Получено/Отгружено' },
-  cancelled: { label: 'Отменено',       bg: 'bg-gray-50',   badge: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400',   icon: XCircle,       days: 'Отменён' },
-  assembled: { label: 'Собрано',        bg: 'bg-blue-50',   badge: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-500',   icon: CheckCircle,   days: 'Собрано' },
-  critical:  { label: 'Особо критично', bg: 'bg-red-50',    badge: 'bg-red-100 text-red-700',       dot: 'bg-red-600',    icon: AlertCircle,   days: '> 12 дней' },
-  high:      { label: 'Особый контроль',bg: 'bg-orange-50', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500', icon: AlertTriangle, days: '> 10 дней' },
-  medium:    { label: 'Контроль',       bg: 'bg-amber-50',  badge: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500',  icon: Clock,         days: '> 7 дней' },
-  ok:        { label: 'В работе',       bg: 'bg-white',     badge: 'bg-gray-100 text-gray-600',     dot: 'bg-green-500',  icon: CheckCircle,   days: '≤ 7 дней' },
+  completed: { label: 'Выполнено',      bg: 'bg-green-50',  badge: 'bg-green-100 text-green-700',   dot: 'bg-green-600',  icon: CheckCircle,   days: 'Получено/Отгружено', tabSuffix: '' },
+  cancelled: { label: 'Отменено',       bg: 'bg-gray-50',   badge: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400',   icon: XCircle,       days: 'Отменён',            tabSuffix: '' },
+  assembled: { label: 'Собрано',        bg: 'bg-blue-50',   badge: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-500',   icon: CheckCircle,   days: 'Собрано',            tabSuffix: '' },
+  critical:  { label: 'Особо критично', bg: 'bg-red-50',    badge: 'bg-red-100 text-red-700',       dot: 'bg-red-600',    icon: AlertCircle,   days: '> 12 дней',          tabSuffix: '> 12 дн.' },
+  high:      { label: 'Особый контроль',bg: 'bg-orange-50', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500', icon: AlertTriangle, days: '> 10 дней',          tabSuffix: '> 10 дн.' },
+  medium:    { label: 'Контроль',       bg: 'bg-amber-50',  badge: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500',  icon: Clock,         days: '> 7 дней',           tabSuffix: '> 7 дн.' },
+  ok:        { label: 'В работе',       bg: 'bg-white',     badge: 'bg-gray-100 text-gray-600',     dot: 'bg-green-500',  icon: CheckCircle,   days: '≤ 7 дней',           tabSuffix: '≤ 7 дн.' },
 };
+
+function exportToExcel(rows, filename) {
+  const data = rows.map(({ row, days, urgency }) => {
+    const cfg = URGENCY_CONFIG[urgency];
+    return {
+      'Срочность':          cfg?.label || urgency,
+      'Период':             cfg?.days || '',
+      'Подразделение':      row['Подразделение'] || '',
+      'Магазин':            row['Магазин'] || '',
+      'Дата создания':      row['Дата создания'] || '',
+      'Номер заказа':       getOrderNum(row) || '',
+      'Дней':               days != null ? days : '',
+      'Статус':             row['Статус'] || '',
+      'Куда перебрасываем': row['Куда перебрасываем'] || row['Куда'] || row['Комментарий (логист)'] || row['Комментарий'] || '',
+      'Группа':             row['_productGroup'] || '',
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Заказы');
+  XLSX.writeFile(wb, filename);
+}
 
 // Detect destination platform from "Куда перебрасываем" field
 function getDestination(row) {
@@ -164,6 +187,7 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter]   = useState('');
   const [subdivFilter, setSubdivFilter]   = useState('');
   const [groupFilter, setGroupFilter]     = useState('');
+  const [dateFrom, setDateFrom]           = useState('');  // YYYY-MM-DD
 
   const enriched = useMemo(() => {
     return spbDetail
@@ -202,13 +226,20 @@ export default function OrdersPage() {
     if (statusFilter) data = data.filter(r => String(r.row['Статус'] || '') === statusFilter);
     if (subdivFilter) data = data.filter(r => String(r.row['Подразделение'] || '') === subdivFilter);
     if (groupFilter)  data = data.filter(r => String(r.row['_productGroup'] || '') === groupFilter);
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      data = data.filter(r => {
+        const d = parseDate(r.row['Дата создания']);
+        return d && d >= from;
+      });
+    }
     return data.sort((a, b) => {
       const orderMap = { critical: 0, high: 1, medium: 2, ok: 3, assembled: 4, cancelled: 5, completed: 6 };
       const ao = orderMap[a.urgency] ?? 9, bo = orderMap[b.urgency] ?? 9;
       if (ao !== bo) return ao - bo;
       return (b.days || 0) - (a.days || 0);
     });
-  }, [enriched, overdue, urgencyFilter, destFilter, statusFilter, subdivFilter, groupFilter]);
+  }, [enriched, overdue, urgencyFilter, destFilter, statusFilter, subdivFilter, groupFilter, dateFrom]);
 
   const counts = useMemo(() => ({
     total:     enriched.length,
@@ -322,27 +353,33 @@ export default function OrdersPage() {
       {/* Urgency filters */}
       <div className="flex flex-wrap gap-2">
         {[
-          { key: 'all',       label: `Все (${counts.total})` },
-          { key: 'overdue',   label: `Просроченные (${counts.overdue})` },
-          { key: 'critical',  label: `Особо критично (${counts.critical})` },
-          { key: 'high',      label: `Особый контроль (${counts.high})` },
-          { key: 'medium',    label: `Контроль (${counts.medium})` },
-          { key: 'ok',        label: `В работе (${counts.ok})` },
-          { key: 'assembled', label: `Собрано (${counts.assembled})` },
-          { key: 'completed', label: `Выполнено (${counts.completed})` },
-          { key: 'cancelled', label: `Отменено (${counts.cancelled})` },
+          { key: 'all',       label: 'Все',            count: counts.total,     suffix: '' },
+          { key: 'overdue',   label: 'Просроченные',   count: counts.overdue,   suffix: '' },
+          { key: 'critical',  label: 'Особо критично', count: counts.critical,  suffix: '> 12 дн.' },
+          { key: 'high',      label: 'Особый контроль',count: counts.high,      suffix: '> 10 дн.' },
+          { key: 'medium',    label: 'Контроль',       count: counts.medium,    suffix: '> 7 дн.' },
+          { key: 'ok',        label: 'В работе',       count: counts.ok,        suffix: '≤ 7 дн.' },
+          { key: 'assembled', label: 'Собрано',        count: counts.assembled, suffix: '' },
+          { key: 'completed', label: 'Выполнено',      count: counts.completed, suffix: '' },
+          { key: 'cancelled', label: 'Отменено',       count: counts.cancelled, suffix: '' },
         ].map(tab => (
           <button key={tab.key} onClick={() => setUrgencyFilter(tab.key)}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex flex-col items-center leading-tight"
             style={urgencyFilter === tab.key
               ? { backgroundColor: '#f59e0b', color: 'white' }
               : { backgroundColor: 'white', border: '1px solid #e5e7eb', color: '#4b5563' }
             }
           >
-            {tab.label}
+            <span>{tab.label} ({tab.count})</span>
+            {tab.suffix && (
+              <span className="text-xs opacity-70 font-normal">{tab.suffix}</span>
+            )}
           </button>
         ))}
+      </div>
 
+      {/* Secondary filters row */}
+      <div className="flex flex-wrap gap-2 items-center">
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
           className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none">
           <option value="">Все статусы</option>
@@ -360,9 +397,37 @@ export default function OrdersPage() {
           <option value="">Все группы</option>
           {groups.map(g => <option key={g} value={g}>{g}</option>)}
         </select>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-500 whitespace-nowrap">Дата создания от:</span>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={e => setDateFrom(e.target.value)}
+            className="px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
+          />
+          {dateFrom && (
+            <button onClick={() => setDateFrom('')} className="p-1 text-gray-400 hover:text-gray-600">
+              <X size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
-      <p className="text-sm text-gray-500 px-1">Заказов: <strong className="text-gray-900">{allShown.length}</strong></p>
+      <div className="flex items-center justify-between px-1">
+        <p className="text-sm text-gray-500">Заказов: <strong className="text-gray-900">{allShown.length}</strong></p>
+        <button
+          onClick={() => {
+            const tabLabel = urgencyFilter === 'all' ? 'Все' : urgencyFilter === 'overdue' ? 'Просроченные' : URGENCY_CONFIG[urgencyFilter]?.label || urgencyFilter;
+            exportToExcel(allShown, `Заказы_${tabLabel}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')}.xlsx`);
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white rounded-lg transition-colors"
+          style={{ backgroundColor: '#16a34a' }}
+        >
+          <Download size={14} />
+          Выгрузить в Excel
+        </button>
+      </div>
 
       {/* Orders table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
