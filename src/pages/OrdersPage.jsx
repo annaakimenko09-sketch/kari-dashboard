@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { useNavigate } from 'react-router-dom';
-import { Upload, Clock, AlertTriangle, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { Upload, Clock, AlertTriangle, AlertCircle, CheckCircle, XCircle, X } from 'lucide-react';
 
 function parseDate(val) {
   if (!val) return null;
@@ -86,10 +86,78 @@ function getQty(row) {
   return null;
 }
 
+// Cancelled orders modal
+function CancelledModal({ cancelledOrders, onClose }) {
+  // Group by store
+  const byStore = useMemo(() => {
+    const map = {};
+    cancelledOrders.forEach(({ row }) => {
+      const store = String(row['Магазин'] || row['магазин'] || '—');
+      if (!map[store]) map[store] = [];
+      map[store].push(row);
+    });
+    return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
+  }, [cancelledOrders]);
+
+  const totalQty = cancelledOrders.reduce((s, { row }) => s + (getQty(row) || 0), 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
+      <div className="bg-white w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        style={{ maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 className="font-bold text-gray-900 text-base">Отменённые заказы</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{cancelledOrders.length} заказов · {totalQty > 0 ? `${totalQty.toLocaleString('ru-RU')} пар` : ''}</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100"><X size={18} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {byStore.map(([store, orders]) => {
+            const storeQty = orders.reduce((s, r) => s + (getQty(r) || 0), 0);
+            return (
+              <div key={store} className="border-b border-gray-100 last:border-0">
+                <div className="flex items-center justify-between px-4 py-2 bg-gray-50">
+                  <span className="font-semibold text-gray-800 text-sm">{store}</span>
+                  <span className="text-xs text-gray-500">{orders.length} заказ(ов) · {storeQty > 0 ? `${storeQty.toLocaleString('ru-RU')} пар` : '—'}</span>
+                </div>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {orders.map((row, i) => {
+                      const orderNum = getOrderNum(row);
+                      const qty = getQty(row);
+                      const dest = String(row['Куда перебрасываем'] || row['Куда'] || '—').trim();
+                      const date = row['Дата создания'] ? String(row['Дата создания']) : '—';
+                      return (
+                        <tr key={i} className="border-t border-gray-50 hover:bg-gray-50">
+                          <td className="px-4 py-2">
+                            <span className="font-mono font-semibold text-gray-400 line-through">{orderNum || '—'}</span>
+                          </td>
+                          <td className="px-3 py-2 text-gray-400 whitespace-nowrap">{date}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-gray-600">
+                            {qty != null ? `${qty.toLocaleString('ru-RU')} пар` : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-gray-400 whitespace-nowrap">{dest}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   const { spbDetail, parsedFiles } = useData();
   const navigate = useNavigate();
   const [urgencyFilter, setUrgencyFilter] = useState('all');
+  const [cancelledModalOpen, setCancelledModalOpen] = useState(false);
   const [destFilter, setDestFilter]       = useState('all');  // Ozon / WB / СОФ / all
   const [statusFilter, setStatusFilter]   = useState('');
   const [subdivFilter, setSubdivFilter]   = useState('');
@@ -212,16 +280,20 @@ export default function OrdersPage() {
               ))}
             </div>
           </div>
-          {/* Cancellation block */}
+          {/* Cancellation block — clickable */}
           {cancelStats.count > 0 && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center min-w-[140px]">
+            <button
+              onClick={() => setCancelledModalOpen(true)}
+              className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center min-w-[140px] hover:bg-gray-100 hover:shadow-sm transition-all cursor-pointer"
+            >
               <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Отменено</p>
               <p className="text-2xl font-bold text-gray-700">{cancelStats.count}</p>
               <p className="text-xs text-gray-500">заказов</p>
               {cancelStats.qty > 0 && (
                 <p className="text-sm font-semibold text-gray-600 mt-1">{cancelStats.qty.toLocaleString('ru-RU')} шт</p>
               )}
-            </div>
+              <p className="text-xs text-gray-400 mt-1">нажмите для деталей</p>
+            </button>
           )}
         </div>
       </div>
@@ -294,12 +366,12 @@ export default function OrdersPage() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Срочность</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Номер заказа</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Дней</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Дата создания</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Статус</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Подразделение</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Магазин</th>
+                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Дата создания</th>
+                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Номер заказа</th>
+                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Дней</th>
+                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Статус</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Куда перебрасываем</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Группа</th>
               </tr>
@@ -325,6 +397,9 @@ export default function OrdersPage() {
                         {cfg.label}
                       </span>
                     </td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{row['Подразделение'] || '—'}</td>
+                    <td className="px-3 py-2 text-gray-700 whitespace-nowrap font-medium">{row['Магазин'] || '—'}</td>
+                    <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{row['Дата создания'] || '—'}</td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {orderNum
                         ? <span className={`font-mono text-xs font-semibold ${isCancelled ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{orderNum}</span>
@@ -339,14 +414,11 @@ export default function OrdersPage() {
                           </span>
                       }
                     </td>
-                    <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{row['Дата создания'] || '—'}</td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       <span className={isCompleted ? 'text-green-700 font-medium' : isCancelled ? 'text-gray-400' : 'text-gray-700'}>
                         {row['Статус'] || '—'}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{row['Подразделение'] || '—'}</td>
-                    <td className="px-3 py-2 text-gray-700 whitespace-nowrap font-medium">{row['Магазин'] || '—'}</td>
                     <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{row['Куда перебрасываем'] || row['Куда'] || '—'}</td>
                     <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{row['_productGroup'] || '—'}</td>
                   </tr>
@@ -356,6 +428,14 @@ export default function OrdersPage() {
           </table>
         </div>
       </div>
+
+      {/* Cancelled modal */}
+      {cancelledModalOpen && (
+        <CancelledModal
+          cancelledOrders={enriched.filter(r => r.urgency === 'cancelled')}
+          onClose={() => setCancelledModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

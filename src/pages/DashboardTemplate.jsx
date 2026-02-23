@@ -4,7 +4,8 @@
 
 import { useMemo, useState, useCallback } from 'react';
 import { getField, getNum } from '../utils/excelParser';
-import { Truck, Package, AlertTriangle, CheckCircle, TrendingDown, Upload, ChevronUp, ChevronDown } from 'lucide-react';
+import { Truck, Package, AlertTriangle, CheckCircle, TrendingDown, Upload, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { useData } from '../context/DataContext';
 
 function KpiCard({ title, value, subtitle, icon: Icon, accentColor, accent = false, onClick }) {
   return (
@@ -161,6 +162,118 @@ function useSortState(defaultKey = '', defaultDir = 'desc') {
   return { sortKey, sortDir, handleSort, sortFn };
 }
 
+// Modal: all orders for a store from Детализация
+function StoreOrdersModal({ storeName, detailData, accentColor, onClose }) {
+  const orders = useMemo(() =>
+    detailData.filter(r => String(r['Магазин'] || '').trim() === storeName),
+    [detailData, storeName]
+  );
+
+  function getOrderNum(row) {
+    for (const key of Object.keys(row)) {
+      const v = String(row[key] || '');
+      if (v.startsWith('RU') || v.startsWith('Ru')) return v;
+    }
+    for (const key of Object.keys(row)) {
+      const k = key.toLowerCase();
+      if (k.includes('номер') || k.includes('заказ')) {
+        const v = String(row[key] || '');
+        if (v && v !== '0') return v;
+      }
+    }
+    return '—';
+  }
+
+  function getDate(row) {
+    const v = row['Дата создания'];
+    if (!v) return '—';
+    if (v instanceof Date) return v.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    return String(v);
+  }
+
+  function getQty(row) {
+    for (const key of Object.keys(row)) {
+      const k = key.toLowerCase();
+      if (k.includes('количество') || k.includes('кол-во') || k.includes('пар')) {
+        const n = parseFloat(row[key]);
+        if (!isNaN(n) && n > 0) return n;
+      }
+    }
+    return null;
+  }
+
+  function getDest(row) {
+    return String(row['Куда перебрасываем'] || row['Куда'] || '—').trim() || '—';
+  }
+
+  const totalQty = orders.reduce((s, r) => s + (getQty(r) || 0), 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
+      <div className="bg-white w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        style={{ maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 className="font-bold text-gray-900 text-base">{storeName}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{orders.length} заказов · {totalQty > 0 ? `${totalQty.toLocaleString('ru-RU')} пар` : ''}</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+            <X size={18} />
+          </button>
+        </div>
+        {/* Table */}
+        <div className="overflow-y-auto flex-1">
+          {orders.length === 0 ? (
+            <div className="py-12 text-center text-gray-400 text-sm">Нет данных по заказам в Детализации</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100 sticky top-0">
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Заказ</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase">Дата</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase">Статус</th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase">Кол-во</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell">Куда</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {orders.map((row, i) => {
+                  const status = String(row['Статус'] || '—');
+                  const isCancelled = status.toLowerCase().includes('отмен');
+                  const qty = getQty(row);
+                  return (
+                    <tr key={i} className={`hover:bg-gray-50 ${isCancelled ? 'opacity-60' : ''}`}>
+                      <td className="px-4 py-2.5">
+                        <span className={`font-mono text-xs font-semibold ${isCancelled ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                          {getOrderNum(row)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{getDate(row)}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          isCancelled ? 'bg-gray-100 text-gray-500' :
+                          status.toLowerCase().includes('получено') || status.toLowerCase().includes('отгружено') ? 'bg-green-100 text-green-700' :
+                          'bg-blue-50 text-blue-700'
+                        }`}>{status}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-right font-semibold text-gray-800">
+                        {qty != null ? qty.toLocaleString('ru-RU') : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-gray-500 hidden sm:table-cell max-w-[120px] truncate">{getDest(row)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardTemplate({
   summary,
   regionTotals,
@@ -171,14 +284,24 @@ export default function DashboardTemplate({
   controlPath,
   vyvozPath,
 }) {
+  const { detailData } = useData();
   const [groupView, setGroupView] = useState('subdivision');
   const [storeSearch, setStoreSearch] = useState('');
   const [storeRegionFilter, setStoreRegionFilter] = useState('');
   const [storeSubdivFilter, setStoreSubdivFilter] = useState('');
+  const [selectedStore, setSelectedStore] = useState(null);
 
   // Sort states for region and subdivision tables
   const regionSort = useSortState('shipped', 'desc');
   const subdivSort = useSortState('shipped', 'desc');
+  // Sort state for store table
+  const [storeSortKey, setStoreSortKey] = useState('');
+  const [storeSortDir, setStoreSortDir] = useState('desc');
+
+  function handleStoreSort(key) {
+    if (storeSortKey === key) setStoreSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setStoreSortKey(key); setStoreSortDir('desc'); }
+  }
 
   // Filter only SPB stores for subdivision detail
   const spbSummary = useMemo(() => summary.filter(row => {
@@ -301,8 +424,26 @@ export default function DashboardTemplate({
       const q = storeSearch.toLowerCase();
       data = data.filter(r => String(r['Магазин'] || '').toLowerCase().includes(q) || String(r['ТЦ'] || '').toLowerCase().includes(q));
     }
+    if (storeSortKey) {
+      data = [...data].sort((a, b) => {
+        const av = getField(a, storeSortKey) ?? a[storeSortKey];
+        const bv = getField(b, storeSortKey) ?? b[storeSortKey];
+        const an = parseFloat(av), bn = parseFloat(bv);
+        if (!isNaN(an) && !isNaN(bn)) return storeSortDir === 'asc' ? an - bn : bn - an;
+        return storeSortDir === 'asc'
+          ? String(av || '').localeCompare(String(bv || ''), 'ru')
+          : String(bv || '').localeCompare(String(av || ''), 'ru');
+      });
+    }
     return data;
-  }, [summary, storeRegionFilter, storeSubdivFilter, storeSearch]);
+  }, [summary, storeRegionFilter, storeSubdivFilter, storeSearch, storeSortKey, storeSortDir]);
+
+  // Filter detail data for this product group
+  const groupDetail = useMemo(() => {
+    if (groupLabel === 'Обувь') return detailData.filter(r => r._productGroup === 'Обувь');
+    if (groupLabel === 'Кидс') return detailData.filter(r => r._productGroup !== 'Обувь');
+    return detailData;
+  }, [detailData, groupLabel]);
 
   // Sorted region and subdivision data
   const sortedRegions = regionSort.sortFn(kpi.byRegion);
@@ -470,15 +611,29 @@ export default function DashboardTemplate({
             </select>
           </div>
         </div>
-        <p className="text-xs text-gray-500 mb-2">Магазинов: <strong>{storeRows.length}</strong></p>
+        <p className="text-xs text-gray-500 mb-2">Магазинов: <strong>{storeRows.length}</strong> <span className="text-gray-400 ml-1">— нажмите на строку для просмотра заказов</span></p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="px-2 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">Регион</th>
-                <th className="px-2 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">Подразд.</th>
-                {ALL_COLUMNS.map(col => (
-                  <th key={col.key} className="px-2 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">{col.label}</th>
+                {[
+                  { key: 'Регион', label: 'Регион' },
+                  { key: 'Подразделение', label: 'Подразд.' },
+                  ...ALL_COLUMNS,
+                ].map(col => (
+                  <th
+                    key={col.key}
+                    className="px-2 py-2 text-left font-semibold text-gray-600 whitespace-nowrap cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleStoreSort(col.key)}
+                  >
+                    <div className="flex items-center gap-1">
+                      {col.label}
+                      {storeSortKey === col.key
+                        ? (storeSortDir === 'asc' ? <ChevronUp size={11} className="text-gray-500" /> : <ChevronDown size={11} className="text-gray-500" />)
+                        : <ChevronDown size={10} className="text-gray-300" />
+                      }
+                    </div>
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -489,8 +644,13 @@ export default function DashboardTemplate({
                 const sp = getNum(row, 'Отгружено товара %');
                 const wp = getNum(row, 'Вычерк по сборке %');
                 const isProblem = (sp > 0 && sp < 80) || wp > 15;
+                const storeName = row['Магазин'] || '';
                 return (
-                  <tr key={idx} className={`border-b border-gray-50 hover:bg-gray-50 ${isProblem ? 'bg-red-50/30' : ''}`}>
+                  <tr
+                    key={idx}
+                    className={`border-b border-gray-50 hover:bg-blue-50/30 cursor-pointer transition-colors ${isProblem ? 'bg-red-50/30' : ''}`}
+                    onClick={() => storeName && setSelectedStore(storeName)}
+                  >
                     <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{row['Регион'] || '—'}</td>
                     <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{row['Подразделение'] || '—'}</td>
                     {ALL_COLUMNS.map(col => (
@@ -505,6 +665,16 @@ export default function DashboardTemplate({
           </table>
         </div>
       </div>
+
+      {/* Store orders modal */}
+      {selectedStore && (
+        <StoreOrdersModal
+          storeName={selectedStore}
+          detailData={groupDetail}
+          accentColor={accentColor}
+          onClose={() => setSelectedStore(null)}
+        />
+      )}
     </div>
   );
 }

@@ -104,8 +104,11 @@ function getOrderQty(row) {
   return 0;
 }
 
-// Find destination field
+// Find destination field — direct read + fallback scan
 function getOrderDest(row) {
+  // Direct field first
+  const direct = row['Куда перебрасываем'] || row['Куда'];
+  if (direct && String(direct).trim() && String(direct).trim() !== '0') return String(direct).trim();
   for (const key of Object.keys(row)) {
     const k = key.toLowerCase();
     if (k.includes('куда') || k.includes('направл') || k.includes('dest')) {
@@ -214,7 +217,7 @@ function StoreModal({ storeName, detailData, accentColor, onClose, productGroup 
                   <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Дата</th>
                   <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Кол-во</th>
                   <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Отгр.</th>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Куда</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Куда</th>
                   <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Статус</th>
                 </tr>
               </thead>
@@ -242,7 +245,7 @@ function StoreModal({ storeName, detailData, accentColor, onClose, productGroup 
                       <td className="px-3 py-2.5 text-xs text-right font-semibold text-gray-800">
                         {shipped > 0 ? shipped.toLocaleString('ru-RU') : '—'}
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-gray-500 hidden sm:table-cell max-w-[100px] truncate">{dest}</td>
+                      <td className="px-3 py-2.5 text-xs text-gray-500 max-w-[120px] truncate">{dest}</td>
                       <td className="px-3 py-2.5">
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${getOrderStatusStyle(status)}`}>
                           {statusCls === 'cancelled' ? 'Отменён' : statusCls === 'completed' ? 'Выполнен' : status !== '—' ? status : 'Активен'}
