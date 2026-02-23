@@ -257,20 +257,21 @@ export default function OrdersPage() {
   const subdivs  = useMemo(() => [...new Set(spbDetail.map(r => r['Подразделение']).filter(Boolean))].sort(), [spbDetail]);
   const groups   = useMemo(() => [...new Set(spbDetail.map(r => r['_productGroup']).filter(Boolean))].sort(), [spbDetail]);
 
-  // Unique sorted dates from real data (for dropdown)
+  // Unique sorted dates — only from active orders (status "Создано", not completed/cancelled/assembled)
   const availableDates = useMemo(() => {
     const seen = new Set();
-    spbDetail.forEach(r => {
-      const raw = r['Дата создания'];
-      if (!raw) return;
-      const d = parseDate(raw);
-      if (!d) return;
-      // Normalise to YYYY-MM-DD for <select> value
-      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      seen.add(key);
-    });
+    enriched
+      .filter(r => r.urgency !== 'completed' && r.urgency !== 'cancelled' && r.urgency !== 'assembled')
+      .forEach(({ row }) => {
+        const raw = row['Дата создания'];
+        if (!raw) return;
+        const d = parseDate(raw);
+        if (!d) return;
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        seen.add(key);
+      });
     return [...seen].sort(); // ascending
-  }, [spbDetail]);
+  }, [enriched]);
 
   if (!parsedFiles.length) {
     return (
