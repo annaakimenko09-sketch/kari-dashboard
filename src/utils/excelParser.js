@@ -148,6 +148,13 @@ function parseDetailSheet(ws) {
     });
 
     if (!obj['Регион'] && !obj['Магазин']) continue;
+
+    // Map "Комментарий (логист)" → "Куда перебрасываем" if the latter is absent
+    if (!obj['Куда перебрасываем']) {
+      const komm = obj['Комментарий (логист)'] ?? obj['Комментарий'] ?? null;
+      if (komm !== null && komm !== undefined) obj['Куда перебрасываем'] = komm;
+    }
+
     data.push(normalizeRow(obj));
   }
 
@@ -275,9 +282,11 @@ export async function parseExcelFiles(fileList) {
       const hasSubReportSheets = subSheets.some(n => n.includes('Отчет'));
 
       // If the file has sub-report-sheets AND the main 'Отчет' was already parsed,
-      // we clear the main summary to avoid duplication — the sub-sheets contain
-      // the same data broken into groups (e.g. kids file: Отчет = all kids,
-      // sub-sheets = each kids sub-group)
+      // we clear the main summary store-rows to avoid duplication — the sub-sheets
+      // contain the same data broken by product sub-group.
+      // BUT we keep regionTotals from the main 'Отчет' sheet because it has all
+      // regions, whereas sub-sheets may only contain one or a few regions.
+      const mainRegionTotals = regionTotals;
       if (hasSubReportSheets && summary.length > 0) {
         summary = [];
         regionTotals = [];
@@ -294,14 +303,8 @@ export async function parseExcelFiles(fileList) {
             _reportType: reportType,
             _file: fname,
           }));
-          const subTotals = parsed.regionTotals.map(r => ({
-            ...r,
-            _productGroup: subGroup,
-            _reportType: reportType,
-            _file: fname,
-          }));
           summary = [...summary, ...subRows];
-          regionTotals = [...regionTotals, ...subTotals];
+          // Don't add sub-sheet regionTotals — use main sheet totals which cover all regions
         } else if (sheetName.includes('Детализация')) {
           // Only add sub-detail if main detail is empty (avoid duplication)
           if (detail.length === 0) {
@@ -315,6 +318,11 @@ export async function parseExcelFiles(fileList) {
             detail = [...detail, ...subRows];
           }
         }
+      }
+
+      // If we had sub-report-sheets, restore regionTotals from the main 'Отчет' sheet
+      if (hasSubReportSheets && mainRegionTotals.length > 0 && regionTotals.length === 0) {
+        regionTotals = mainRegionTotals;
       }
 
       results.push({ fileName: fname, title: meta.title, period: meta.period, productGroup, reportType, summary, detail, regionTotals });

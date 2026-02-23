@@ -106,8 +106,8 @@ function getOrderQty(row) {
 
 // Find destination field — direct read + fallback scan
 function getOrderDest(row) {
-  // Direct field first
-  const direct = row['Куда перебрасываем'] || row['Куда'];
+  // Direct field first (including "Комментарий (логист)" which is column G in Детализация)
+  const direct = row['Куда перебрасываем'] || row['Куда'] || row['Комментарий (логист)'] || row['Комментарий'];
   if (direct && String(direct).trim() && String(direct).trim() !== '0') return String(direct).trim();
   for (const key of Object.keys(row)) {
     const k = key.toLowerCase();

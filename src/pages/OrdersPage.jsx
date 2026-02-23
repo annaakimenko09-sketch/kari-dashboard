@@ -27,6 +27,7 @@ function classifyStatus(status) {
   if (s.includes('получено')) return 'completed';
   if (s.includes('отгружено')) return 'completed';
   if (s.includes('отмен')) return 'cancelled';
+  if (s.includes('собрано')) return 'assembled';
   return 'active';
 }
 
@@ -41,6 +42,7 @@ function getUrgency(days) {
 const URGENCY_CONFIG = {
   completed: { label: 'Выполнено',      bg: 'bg-green-50',  badge: 'bg-green-100 text-green-700',   dot: 'bg-green-600',  icon: CheckCircle,   days: 'Получено/Отгружено' },
   cancelled: { label: 'Отменено',       bg: 'bg-gray-50',   badge: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400',   icon: XCircle,       days: 'Отменён' },
+  assembled: { label: 'Собрано',        bg: 'bg-blue-50',   badge: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-500',   icon: CheckCircle,   days: 'Собрано' },
   critical:  { label: 'Особо критично', bg: 'bg-red-50',    badge: 'bg-red-100 text-red-700',       dot: 'bg-red-600',    icon: AlertCircle,   days: '> 12 дней' },
   high:      { label: 'Особый контроль',bg: 'bg-orange-50', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500', icon: AlertTriangle, days: '> 10 дней' },
   medium:    { label: 'Контроль',       bg: 'bg-amber-50',  badge: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500',  icon: Clock,         days: '> 7 дней' },
@@ -49,7 +51,7 @@ const URGENCY_CONFIG = {
 
 // Detect destination platform from "Куда перебрасываем" field
 function getDestination(row) {
-  const val = String(row['Куда перебрасываем'] || row['Куда'] || '').toLowerCase();
+  const val = String(row['Куда перебрасываем'] || row['Куда'] || row['Комментарий (логист)'] || row['Комментарий'] || '').toLowerCase();
   if (val.includes('ozon') || val.includes('озон')) return 'Ozon';
   if (val.includes('wb') || val.includes('wildberries') || val.includes('вайлдб')) return 'WB';
   if (val.includes('соф') || val.includes('sof') || val.includes('склад')) return 'СОФ';
@@ -127,7 +129,7 @@ function CancelledModal({ cancelledOrders, onClose }) {
                     {orders.map((row, i) => {
                       const orderNum = getOrderNum(row);
                       const qty = getQty(row);
-                      const dest = String(row['Куда перебрасываем'] || row['Куда'] || '—').trim();
+                      const dest = String(row['Куда перебрасываем'] || row['Куда'] || row['Комментарий (логист)'] || row['Комментарий'] || '—').trim();
                       const date = row['Дата создания'] ? String(row['Дата создания']) : '—';
                       return (
                         <tr key={i} className="border-t border-gray-50 hover:bg-gray-50">
@@ -169,6 +171,7 @@ export default function OrdersPage() {
         const statusClass = classifyStatus(row['Статус']);
         if (statusClass === 'completed') return { row, days: null, urgency: 'completed' };
         if (statusClass === 'cancelled') return { row, days: null, urgency: 'cancelled' };
+        if (statusClass === 'assembled') return { row, days: null, urgency: 'assembled' };
         const days = daysSince(row['Дата создания']);
         const urgency = days !== null ? getUrgency(days) : null;
         return { row, days, urgency };
@@ -177,7 +180,7 @@ export default function OrdersPage() {
   }, [spbDetail]);
 
   const overdue = useMemo(() =>
-    enriched.filter(r => r.urgency !== 'ok' && r.urgency !== 'completed' && r.urgency !== 'cancelled'),
+    enriched.filter(r => r.urgency !== 'ok' && r.urgency !== 'completed' && r.urgency !== 'cancelled' && r.urgency !== 'assembled'),
   [enriched]);
 
   // Cancellation stats
@@ -200,7 +203,7 @@ export default function OrdersPage() {
     if (subdivFilter) data = data.filter(r => String(r.row['Подразделение'] || '') === subdivFilter);
     if (groupFilter)  data = data.filter(r => String(r.row['_productGroup'] || '') === groupFilter);
     return data.sort((a, b) => {
-      const orderMap = { critical: 0, high: 1, medium: 2, ok: 3, cancelled: 4, completed: 5 };
+      const orderMap = { critical: 0, high: 1, medium: 2, ok: 3, assembled: 4, cancelled: 5, completed: 6 };
       const ao = orderMap[a.urgency] ?? 9, bo = orderMap[b.urgency] ?? 9;
       if (ao !== bo) return ao - bo;
       return (b.days || 0) - (a.days || 0);
@@ -211,6 +214,7 @@ export default function OrdersPage() {
     total:     enriched.length,
     completed: enriched.filter(r => r.urgency === 'completed').length,
     cancelled: enriched.filter(r => r.urgency === 'cancelled').length,
+    assembled: enriched.filter(r => r.urgency === 'assembled').length,
     overdue:   overdue.length,
     critical:  enriched.filter(r => r.urgency === 'critical').length,
     high:      enriched.filter(r => r.urgency === 'high').length,
@@ -324,6 +328,7 @@ export default function OrdersPage() {
           { key: 'high',      label: `Особый контроль (${counts.high})` },
           { key: 'medium',    label: `Контроль (${counts.medium})` },
           { key: 'ok',        label: `В работе (${counts.ok})` },
+          { key: 'assembled', label: `Собрано (${counts.assembled})` },
           { key: 'completed', label: `Выполнено (${counts.completed})` },
           { key: 'cancelled', label: `Отменено (${counts.cancelled})` },
         ].map(tab => (
@@ -419,7 +424,7 @@ export default function OrdersPage() {
                         {row['Статус'] || '—'}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{row['Куда перебрасываем'] || row['Куда'] || '—'}</td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{row['Куда перебрасываем'] || row['Куда'] || row['Комментарий (логист)'] || row['Комментарий'] || '—'}</td>
                     <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{row['_productGroup'] || '—'}</td>
                   </tr>
                 );

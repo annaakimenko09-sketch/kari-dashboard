@@ -203,7 +203,7 @@ function StoreOrdersModal({ storeName, detailData, accentColor, onClose }) {
   }
 
   function getDest(row) {
-    return String(row['Куда перебрасываем'] || row['Куда'] || '—').trim() || '—';
+    return String(row['Куда перебрасываем'] || row['Куда'] || row['Комментарий (логист)'] || row['Комментарий'] || '—').trim() || '—';
   }
 
   const totalQty = orders.reduce((s, r) => s + (getQty(r) || 0), 0);
