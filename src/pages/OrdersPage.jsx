@@ -227,10 +227,14 @@ export default function OrdersPage() {
     if (subdivFilter) data = data.filter(r => String(r.row['Подразделение'] || '') === subdivFilter);
     if (groupFilter)  data = data.filter(r => String(r.row['_productGroup'] || '') === groupFilter);
     if (dateFrom) {
-      const from = new Date(dateFrom);
+      // Compare as YYYY-MM-DD strings to avoid UTC offset issues
       data = data.filter(r => {
-        const d = parseDate(r.row['Дата создания']);
-        return d && d >= from;
+        const raw = r.row['Дата создания'];
+        if (!raw) return false;
+        const d = parseDate(raw);
+        if (!d) return false;
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        return key >= dateFrom;
       });
     }
     return data.sort((a, b) => {
