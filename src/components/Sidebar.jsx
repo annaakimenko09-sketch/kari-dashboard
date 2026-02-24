@@ -35,22 +35,29 @@ const sections = [
     ],
   },
   {
+    label: 'Приёмка',
+    color: '#10b981',
+    items: [
+      { path: '/acceptance/spb', label: 'СПБ', icon: ClipboardCheck },
+      { path: '/acceptance/bel', label: 'БЕЛ', icon: ClipboardCheck },
+    ],
+  },
+  {
     label: 'standalone',
     color: '#6b7280',
     items: [
       { path: '/orders',       label: 'Контроль заказов', icon: Clock },
-      { path: '/acceptance',   label: 'Приёмка',          icon: ClipboardCheck },
       { path: '/upload',       label: 'Загрузить данные', icon: Upload },
     ],
   },
 ];
 
 // Which section labels to show as expandable groups (not standalone items)
-const GROUP_LABELS = ['Обувь', 'Кидс'];
+const GROUP_LABELS = ['Обувь', 'Кидс', 'Приёмка'];
 
 export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) {
   // Track expanded groups
-  const [expanded, setExpanded] = useState({ 'Обувь': true, 'Кидс': true });
+  const [expanded, setExpanded] = useState({ 'Обувь': true, 'Кидс': true, 'Приёмка': true });
 
   function toggleGroup(label) {
     setExpanded(prev => ({ ...prev, [label]: !prev[label] }));

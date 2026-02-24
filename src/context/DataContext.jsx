@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback } from 'react';
 import { parseExcelFiles, mergeSummaryData, mergeDetailData, mergeRegionTotals } from '../utils/excelParser';
+import { parseScanningFiles } from '../utils/scanningParser';
 
 const DataContext = createContext(null);
 
@@ -7,15 +8,43 @@ export function DataProvider({ children }) {
   const [parsedFiles, setParsedFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [scanningFiles, setScanningFiles] = useState([]);
 
   const loadFiles = useCallback(async (fileList) => {
     setLoading(true);
     setError(null);
     try {
-      const results = await parseExcelFiles(fileList);
-      setParsedFiles(results);
+      // Split: scanning files ("Нет сканирования") vs vyvoz/report files
+      const scanList = Array.from(fileList).filter(f =>
+        f.name.includes('сканирован') || f.name.toLowerCase().includes('scan')
+      );
+      const reportList = Array.from(fileList).filter(f =>
+        !f.name.includes('сканирован') && !f.name.toLowerCase().includes('scan')
+      );
+
+      if (reportList.length > 0) {
+        const results = await parseExcelFiles(reportList);
+        setParsedFiles(results);
+      }
+      if (scanList.length > 0) {
+        const scanResults = await parseScanningFiles(scanList);
+        setScanningFiles(scanResults);
+      }
     } catch (err) {
       setError(err.message || 'Ошибка при загрузке файлов');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadScanningFiles = useCallback(async (fileList) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const results = await parseScanningFiles(Array.from(fileList));
+      setScanningFiles(results);
+    } catch (err) {
+      setError(err.message || 'Ошибка при загрузке файлов сканирования');
     } finally {
       setLoading(false);
     }
@@ -65,6 +94,10 @@ export function DataProvider({ children }) {
     return region.includes('СПБ') || region.includes('SPB');
   });
 
+  // Scanning data helpers
+  const spbScanning = scanningFiles.find(f => f.fileRegion === 'СПБ') || null;
+  const belScanning = scanningFiles.find(f => f.fileRegion === 'БЕЛ') || null;
+
   return (
     <DataContext.Provider value={{
       parsedFiles,
@@ -85,6 +118,10 @@ export function DataProvider({ children }) {
       spbBelSummary,
       spbBelDetail,
       spbDetail,
+      scanningFiles,
+      loadScanningFiles,
+      spbScanning,
+      belScanning,
     }}>
       {children}
     </DataContext.Provider>

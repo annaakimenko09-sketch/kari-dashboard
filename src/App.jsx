@@ -11,6 +11,8 @@ import ControlObuvPage    from './pages/ControlObuvPage';
 import ControlKidsPage    from './pages/ControlKidsPage';
 import OrdersPage         from './pages/OrdersPage';
 import AcceptancePage     from './pages/AcceptancePage';
+import ScanningSpbPage    from './pages/ScanningSpbPage';
+import ScanningBelPage    from './pages/ScanningBelPage';
 import UploadPage         from './pages/UploadPage';
 
 export default function App() {
@@ -38,7 +40,9 @@ export default function App() {
                 <Route path="orders"       element={<ErrorBoundary><OrdersPage /></ErrorBoundary>} />
 
                 {/* Приёмка */}
-                <Route path="acceptance"   element={<ErrorBoundary><AcceptancePage /></ErrorBoundary>} />
+                <Route path="acceptance"     element={<ErrorBoundary><AcceptancePage /></ErrorBoundary>} />
+                <Route path="acceptance/spb" element={<ErrorBoundary><ScanningSpbPage /></ErrorBoundary>} />
+                <Route path="acceptance/bel" element={<ErrorBoundary><ScanningBelPage /></ErrorBoundary>} />
 
                 {/* Загрузка */}
                 <Route path="upload"       element={<ErrorBoundary><UploadPage /></ErrorBoundary>} />
