@@ -289,7 +289,11 @@ export default function OrdersPage() {
       const s = String(row['Магазин'] || '');
       if (s) countMap[s] = (countMap[s] || 0) + 1;
     });
-    return Object.entries(countMap).sort((a, b) => b[1] - a[1]);
+    return Object.entries(countMap).sort((a, b) => {
+      const na = parseFloat(a[0]), nb = parseFloat(b[0]);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a[0].localeCompare(b[0], 'ru');
+    });
   }, [enriched, overdue, urgencyFilter, destFilter, statusFilter, subdivFilter, groupFilter, dateFrom]);
 
   // Unique sorted dates — only from active orders (status "Создано", not completed/cancelled/assembled)
