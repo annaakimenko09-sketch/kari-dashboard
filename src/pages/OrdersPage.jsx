@@ -64,6 +64,7 @@ function exportToExcel(rows, filename) {
       'Статус':             row['Статус'] || '',
       'Куда перебрасываем': row['Куда перебрасываем'] || row['Куда'] || row['Комментарий (логист)'] || row['Комментарий'] || '',
       'Группа':             row['_productGroup'] || '',
+      'Кол-во':             getQty(row) ?? '',
     };
   });
   const ws = XLSX.utils.json_to_sheet(data);
@@ -188,6 +189,7 @@ export default function OrdersPage() {
   const [subdivFilter, setSubdivFilter]   = useState('');
   const [groupFilter, setGroupFilter]     = useState('');
   const [dateFrom, setDateFrom]           = useState('');  // YYYY-MM-DD
+  const [storeFilter, setStoreFilter]     = useState('');
 
   const enriched = useMemo(() => {
     return spbDetail
@@ -237,13 +239,14 @@ export default function OrdersPage() {
         return key >= dateFrom;
       });
     }
+    if (storeFilter) data = data.filter(r => String(r.row['Магазин'] || '') === storeFilter);
     return data.sort((a, b) => {
       const orderMap = { critical: 0, high: 1, medium: 2, ok: 3, assembled: 4, cancelled: 5, completed: 6 };
       const ao = orderMap[a.urgency] ?? 9, bo = orderMap[b.urgency] ?? 9;
       if (ao !== bo) return ao - bo;
       return (b.days || 0) - (a.days || 0);
     });
-  }, [enriched, overdue, urgencyFilter, destFilter, statusFilter, subdivFilter, groupFilter, dateFrom]);
+  }, [enriched, overdue, urgencyFilter, destFilter, statusFilter, subdivFilter, groupFilter, dateFrom, storeFilter]);
 
   const counts = useMemo(() => ({
     total:     enriched.length,
@@ -260,6 +263,34 @@ export default function OrdersPage() {
   const statuses = useMemo(() => [...new Set(spbDetail.map(r => r['Статус']).filter(Boolean))].sort(), [spbDetail]);
   const subdivs  = useMemo(() => [...new Set(spbDetail.map(r => r['Подразделение']).filter(Boolean))].sort(), [spbDetail]);
   const groups   = useMemo(() => [...new Set(spbDetail.map(r => r['_productGroup']).filter(Boolean))].sort(), [spbDetail]);
+
+  // Store counts based on current filters (without store filter itself)
+  const storesWithCounts = useMemo(() => {
+    let data = urgencyFilter === 'overdue' ? overdue : enriched;
+    if (urgencyFilter !== 'all' && urgencyFilter !== 'overdue') {
+      data = enriched.filter(r => r.urgency === urgencyFilter);
+    }
+    if (destFilter !== 'all') data = data.filter(r => getDestination(r.row) === destFilter);
+    if (statusFilter) data = data.filter(r => String(r.row['Статус'] || '') === statusFilter);
+    if (subdivFilter) data = data.filter(r => String(r.row['Подразделение'] || '') === subdivFilter);
+    if (groupFilter)  data = data.filter(r => String(r.row['_productGroup'] || '') === groupFilter);
+    if (dateFrom) {
+      data = data.filter(r => {
+        const raw = r.row['Дата создания'];
+        if (!raw) return false;
+        const d = parseDate(raw);
+        if (!d) return false;
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        return key >= dateFrom;
+      });
+    }
+    const countMap = {};
+    data.forEach(({ row }) => {
+      const s = String(row['Магазин'] || '');
+      if (s) countMap[s] = (countMap[s] || 0) + 1;
+    });
+    return Object.entries(countMap).sort((a, b) => b[1] - a[1]);
+  }, [enriched, overdue, urgencyFilter, destFilter, statusFilter, subdivFilter, groupFilter, dateFrom]);
 
   // Unique sorted dates — only from active orders (status "Создано", not completed/cancelled/assembled)
   const availableDates = useMemo(() => {
@@ -438,6 +469,19 @@ export default function OrdersPage() {
             </button>
           )}
         </div>
+
+        <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}
+          className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none">
+          <option value="">Все магазины</option>
+          {storesWithCounts.map(([name, count]) => (
+            <option key={name} value={name}>{name} ({count})</option>
+          ))}
+        </select>
+        {storeFilter && (
+          <button onClick={() => setStoreFilter('')} className="p-1 text-gray-400 hover:text-gray-600">
+            <X size={14} />
+          </button>
+        )}
       </div>
 
       <div className="flex items-center justify-between px-1">
@@ -469,13 +513,14 @@ export default function OrdersPage() {
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Дней</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Статус</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Куда перебрасываем</th>
+                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Кол-во</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Группа</th>
               </tr>
             </thead>
             <tbody>
               {allShown.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan={10} className="px-4 py-8 text-center text-gray-400">
                     Нет заказов по выбранным фильтрам
                   </td>
                 </tr>
@@ -516,6 +561,9 @@ export default function OrdersPage() {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{row['Куда перебрасываем'] || row['Куда'] || row['Комментарий (логист)'] || row['Комментарий'] || '—'}</td>
+                    <td className="px-3 py-2 text-gray-700 whitespace-nowrap font-medium">
+                      {getQty(row) != null ? getQty(row).toLocaleString('ru-RU') : '—'}
+                    </td>
                     <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{row['_productGroup'] || '—'}</td>
                   </tr>
                 );
