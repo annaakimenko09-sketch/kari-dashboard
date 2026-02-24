@@ -6,8 +6,14 @@ import * as XLSX from 'xlsx';
  * Each row has: Регион, Подразделение, Магазин, ТЦ,
  *   scanPct, scanArt, scanQty,          ← cols E F G (idx 4 5 6)
  *   bindPct, bindArt,                   ← cols H I   (idx 7 8)
- *   seasons:    [ { season, direction, value } ]  ← cols J+ (idx 10..41)
- *   categories: [ { category, value } ]           ← cols AQ+ (idx 42+)
+ *   seasons:    [ { season, direction, value } ]              ← cols J+ (idx 10..41)
+ *   categories: [ { season, direction, category, value } ]    ← cols AQ+ (idx 42+)
+ *
+ * Header rows:
+ *   row 2 (idx 2): season name (e.g. "всесезонный/")
+ *   row 3 (idx 3): direction/gender (e.g. "Женская обувь")
+ *   row 4 (idx 4): category name (e.g. "003 Мокасины женские")
+ *   row 8+:        data rows
  */
 function parseSheet(ws, sheetName) {
   const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
@@ -16,10 +22,10 @@ function parseSheet(ws, sheetName) {
   const periodRow = raw[2] || [];
   const period = periodRow[0] ? String(periodRow[0]).replace('Период отчета: ', '').trim() : '';
 
-  // Season/direction headers are in rows 2 and 3 (index 2, 3)
-  // Category headers are in row 3 (index 3), starting at col AQ (index 42)
-  const seasonRow = raw[2] || [];
-  const dirRow    = raw[3] || [];
+  // Header rows
+  const seasonRow  = raw[2] || [];  // season name
+  const dirRow     = raw[3] || [];  // direction/gender
+  const catNameRow = raw[4] || [];  // actual category name (5th row, index 4)
 
   const maxCols = (raw[8] || raw[4] || []).length;
 
@@ -34,12 +40,16 @@ function parseSheet(ws, sheetName) {
   }
 
   // Category cols: indices 42+
-  // Header row for category name is row 3 (dirRow), category label in row 3
+  // Row 4 (catNameRow) has the actual shoe type name: "003 Мокасины женские" etc.
+  // Row 3 (dirRow) has direction/gender grouping: "Женская обувь" etc.
+  // Row 2 (seasonRow) has the season: "всесезонный/" etc.
   const catCols = [];
   for (let c = 42; c < maxCols; c++) {
-    const label = dirRow[c] ? String(dirRow[c]).trim() : null;
-    if (label && label !== '-' && label !== '0') {
-      catCols.push({ colIdx: c, category: label });
+    const catName   = catNameRow[c] ? String(catNameRow[c]).trim() : null;
+    const direction = dirRow[c]     ? String(dirRow[c]).trim() : null;
+    const season    = seasonRow[c]  ? String(seasonRow[c]).replace('/', '').trim() : null;
+    if (catName && catName !== '-' && catName !== '0') {
+      catCols.push({ colIdx: c, category: catName, direction: direction || '', season: season || '' });
     }
   }
 
@@ -76,7 +86,7 @@ function parseSheet(ws, sheetName) {
     for (const cc of catCols) {
       const val = parsePct(raw[i][cc.colIdx]);
       if (val !== null) {
-        obj.categories.push({ category: cc.category, value: val });
+        obj.categories.push({ season: cc.season, direction: cc.direction, category: cc.category, value: val });
       }
     }
 

@@ -35,6 +35,13 @@ const sections = [
     ],
   },
   {
+    label: 'standalone-orders',
+    color: '#6b7280',
+    items: [
+      { path: '/orders', label: 'Контроль заказов', icon: Clock },
+    ],
+  },
+  {
     label: 'Приёмка',
     color: '#10b981',
     items: [
@@ -46,8 +53,7 @@ const sections = [
     label: 'standalone',
     color: '#6b7280',
     items: [
-      { path: '/orders',       label: 'Контроль заказов', icon: Clock },
-      { path: '/upload',       label: 'Загрузить данные', icon: Upload },
+      { path: '/upload', label: 'Загрузить данные', icon: Upload },
     ],
   },
 ];

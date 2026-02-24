@@ -73,12 +73,6 @@ function SeasonModal({ title, seasons, categories, onClose }) {
   // and categories are sub-rows under their direction,
   // we store categories as flat list and show them when user clicks a direction row.
 
-  // Build a lookup: map season+direction → filtered categories
-  // The file has categories columns starting at AQ. Each category column header
-  // in row3 is e.g. "Женская обувь / Туфли". We'll look for matches.
-  // For simplicity: categories array is a flat list [{category, value}] per row.
-  // We'll show ALL categories when any direction is expanded (they relate to the whole row).
-
   const colorFn = useMemo(() => {
     const allVals = [...(seasons || []).map(s => s.value), ...(categories || []).map(c => c.value)];
     return makeColorFn(allVals);
@@ -118,15 +112,10 @@ function SeasonModal({ title, seasons, categories, onClose }) {
                 {dirs.map(({ direction, value }) => {
                   const c = colorFn(value);
                   const isOpen = openSeasons[season + '|' + direction];
-                  // Find categories that match this direction (by name prefix)
-                  const matchedCats = (categories || []).filter(cat =>
-                    cat.category && direction && (
-                      cat.category.toLowerCase().includes(direction.toLowerCase().split(' ')[0]) ||
-                      direction.toLowerCase().includes(cat.category.toLowerCase().split(' ')[0])
-                    )
+                  // Match categories by exact season + direction fields (set by parser)
+                  const showCats = direction === 'ИТОГО' ? [] : (categories || []).filter(cat =>
+                    cat.season === season && cat.direction === direction
                   );
-                  // Fallback: if no match by name, show all categories under ИТОГО direction
-                  const showCats = direction === 'ИТОГО' ? [] : matchedCats;
 
                   return (
                     <div key={direction}>
@@ -152,7 +141,7 @@ function SeasonModal({ title, seasons, categories, onClose }) {
                       {/* Category sub-rows */}
                       {isOpen && showCats.length > 0 && (
                         <div className="bg-gray-50 pb-1">
-                          {showCats.map(({ category, value: cv }) => {
+                          {showCats.map(({ category, value: cv, direction: _d, season: _s }) => {
                             const cc = colorFn(cv);
                             return (
                               <div key={category} className="flex items-center justify-between py-1.5 px-6">
