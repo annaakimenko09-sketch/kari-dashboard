@@ -4,21 +4,41 @@ import { useData } from '../context/DataContext';
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 
-// ─── helpers ────────────────────────────────────────────────────────────────
+// ─── Dynamic gradient color helpers ──────────────────────────────────────
+// Higher % = worse (redder). Colors are computed dynamically relative to
+// the min/max of the current dataset being rendered.
 
-// Inverted scale: higher % = redder (worse). Used in Приёмка only.
-function pctColor(v) {
-  if (v === null) return 'text-gray-400';
-  if (v >= 90) return 'text-red-600';
-  if (v >= 80) return 'text-amber-600';
-  return 'text-green-600';
+function interpolateColor(t) {
+  // t=0 → green (#22c55e), t=0.5 → yellow (#eab308), t=1 → red (#ef4444)
+  let r, g, b;
+  if (t <= 0.5) {
+    const s = t * 2; // 0..1
+    r = Math.round(34  + (234 - 34)  * s);
+    g = Math.round(197 + (179 - 197) * s);
+    b = Math.round(94  + (8   - 94)  * s);
+  } else {
+    const s = (t - 0.5) * 2; // 0..1
+    r = Math.round(234 + (239 - 234) * s);
+    g = Math.round(179 + (68  - 179) * s);
+    b = Math.round(8   + (68  - 8)   * s);
+  }
+  return `rgb(${r},${g},${b})`;
 }
 
-function pctBg(v) {
-  if (v === null) return 'bg-gray-100 text-gray-400';
-  if (v >= 90) return 'bg-red-100 text-red-700';
-  if (v >= 80) return 'bg-amber-100 text-amber-700';
-  return 'bg-green-100 text-green-700';
+// Build a color-getter for a set of numeric values (higher = worse)
+function makeColorFn(values) {
+  const valid = values.filter(v => v !== null && v !== undefined);
+  if (valid.length === 0) return () => ({ bg: '#f3f4f6', text: '#9ca3af' });
+  const min = Math.min(...valid);
+  const max = Math.max(...valid);
+  return (v) => {
+    if (v === null || v === undefined) return { bg: '#f3f4f6', text: '#9ca3af' };
+    const t = max === min ? 0.5 : (v - min) / (max - min);
+    const color = interpolateColor(t);
+    // Light background: mix color with white at 20% opacity
+    const bgColor = interpolateColor(t);
+    return { bg: bgColor + '22', text: color, solid: bgColor };
+  };
 }
 
 function fmt(v, decimals = 1) {
@@ -31,13 +51,12 @@ function fmtNum(v) {
   return Number(v).toLocaleString('ru-RU');
 }
 
-// ─── Details modal (Seasons + Categories tabs) ─────────────────────────────
+// ─── Season modal with collapsible categories ─────────────────────────────
 
-function DetailsModal({ title, seasons, categories, onClose }) {
-  const hasCategories = categories && categories.length > 0;
-  const hasSeasons = seasons && seasons.length > 0;
-  const [modalTab, setModalTab] = useState(hasSeasons ? 'seasons' : 'categories');
+function SeasonModal({ title, seasons, categories, onClose }) {
+  const [openSeasons, setOpenSeasons] = useState({});
 
+  // Group seasons by season name
   const groupedSeasons = useMemo(() => {
     const map = {};
     (seasons || []).forEach(({ season, direction, value }) => {
@@ -46,6 +65,28 @@ function DetailsModal({ title, seasons, categories, onClose }) {
     });
     return Object.entries(map);
   }, [seasons]);
+
+  // Group categories by the direction name that matches season directions
+  // categories: [{ category, value }] — flat list under a season/direction key
+  // We'll try to pair categories with seasons by order/index.
+  // Since the Excel structure is: seasons cols 10-41 then categories cols 42+
+  // and categories are sub-rows under their direction,
+  // we store categories as flat list and show them when user clicks a direction row.
+
+  // Build a lookup: map season+direction → filtered categories
+  // The file has categories columns starting at AQ. Each category column header
+  // in row3 is e.g. "Женская обувь / Туфли". We'll look for matches.
+  // For simplicity: categories array is a flat list [{category, value}] per row.
+  // We'll show ALL categories when any direction is expanded (they relate to the whole row).
+
+  const colorFn = useMemo(() => {
+    const allVals = [...(seasons || []).map(s => s.value), ...(categories || []).map(c => c.value)];
+    return makeColorFn(allVals);
+  }, [seasons, categories]);
+
+  function toggleSeason(key) {
+    setOpenSeasons(prev => ({ ...prev, [key]: !prev[key] }));
+  }
 
   return (
     <div
@@ -61,66 +102,97 @@ function DetailsModal({ title, seasons, categories, onClose }) {
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
           <div>
             <h2 className="font-bold text-gray-900 text-base">{title}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Детализация по сезонам и категориям</p>
+            <p className="text-xs text-gray-400 mt-0.5">Сканирование по сезонам, %</p>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
             <X size={18} />
           </button>
         </div>
 
-        {/* Modal tabs — show only if both exist */}
-        {hasCategories && hasSeasons && (
-          <div className="flex gap-2 px-5 pt-3 flex-shrink-0">
-            {[
-              { key: 'seasons',    label: 'Сезоны' },
-              { key: 'categories', label: 'Категории' },
-            ].map(t => (
-              <button key={t.key} onClick={() => setModalTab(t.key)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                style={modalTab === t.key
-                  ? { backgroundColor: '#111827', color: 'white' }
-                  : { backgroundColor: '#f3f4f6', color: '#4b5563' }
-                }
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
+          {groupedSeasons.map(([season, dirs]) => (
+            <div key={season} className="border border-gray-100 rounded-xl overflow-hidden">
+              {/* Season group header */}
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2 bg-gray-50">{season}</p>
+              <div className="divide-y divide-gray-50">
+                {dirs.map(({ direction, value }) => {
+                  const c = colorFn(value);
+                  const isOpen = openSeasons[season + '|' + direction];
+                  // Find categories that match this direction (by name prefix)
+                  const matchedCats = (categories || []).filter(cat =>
+                    cat.category && direction && (
+                      cat.category.toLowerCase().includes(direction.toLowerCase().split(' ')[0]) ||
+                      direction.toLowerCase().includes(cat.category.toLowerCase().split(' ')[0])
+                    )
+                  );
+                  // Fallback: if no match by name, show all categories under ИТОГО direction
+                  const showCats = direction === 'ИТОГО' ? [] : matchedCats;
 
-        <div className="overflow-y-auto flex-1 px-5 py-3 space-y-3">
-          {modalTab === 'seasons' && (
-            <>
-              {groupedSeasons.map(([season, dirs]) => (
-                <div key={season}>
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{season}</p>
-                  <div className="space-y-1">
-                    {dirs.map(({ direction, value }) => (
-                      <div key={direction} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-gray-50">
-                        <span className="text-sm text-gray-700">{direction}</span>
-                        <span className={`text-sm font-semibold ${pctColor(value)}`}>{fmt(value)}</span>
+                  return (
+                    <div key={direction}>
+                      <div
+                        className={`flex items-center justify-between py-2 px-3 ${showCats.length > 0 ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+                        onClick={() => showCats.length > 0 && toggleSeason(season + '|' + direction)}
+                      >
+                        <div className="flex items-center gap-2">
+                          {showCats.length > 0 && (
+                            isOpen
+                              ? <ChevronDown size={12} className="text-gray-400" />
+                              : <ChevronRight size={12} className="text-gray-400" />
+                          )}
+                          <span className="text-sm text-gray-700">{direction}</span>
+                        </div>
+                        <span
+                          className="text-sm font-semibold px-2 py-0.5 rounded"
+                          style={{ color: c.text, backgroundColor: c.bg }}
+                        >
+                          {fmt(value)}
+                        </span>
                       </div>
-                    ))}
+                      {/* Category sub-rows */}
+                      {isOpen && showCats.length > 0 && (
+                        <div className="bg-gray-50 pb-1">
+                          {showCats.map(({ category, value: cv }) => {
+                            const cc = colorFn(cv);
+                            return (
+                              <div key={category} className="flex items-center justify-between py-1.5 px-6">
+                                <span className="text-xs text-gray-600">{category}</span>
+                                <span
+                                  className="text-xs font-semibold px-1.5 py-0.5 rounded"
+                                  style={{ color: cc.text, backgroundColor: cc.bg }}
+                                >
+                                  {fmt(cv)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {/* Categories section — flat list at bottom if no season match */}
+          {groupedSeasons.length === 0 && categories && categories.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Категории</p>
+              {categories.map(({ category, value }) => {
+                const c = colorFn(value);
+                return (
+                  <div key={category} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-gray-50 mb-1">
+                    <span className="text-sm text-gray-700">{category}</span>
+                    <span className="text-sm font-semibold px-2 py-0.5 rounded" style={{ color: c.text, backgroundColor: c.bg }}>
+                      {fmt(value)}
+                    </span>
                   </div>
-                </div>
-              ))}
-              {groupedSeasons.length === 0 && (
-                <p className="text-sm text-gray-400 text-center py-4">Нет данных по сезонам</p>
-              )}
-            </>
+                );
+              })}
+            </div>
           )}
-
-          {modalTab === 'categories' && (
-            <>
-              {hasCategories ? (categories || []).map(({ category, value }) => (
-                <div key={category} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-gray-50">
-                  <span className="text-sm text-gray-700">{category}</span>
-                  <span className={`text-sm font-semibold ${pctColor(value)}`}>{fmt(value)}</span>
-                </div>
-              )) : (
-                <p className="text-sm text-gray-400 text-center py-4">Нет данных по категориям</p>
-              )}
-            </>
+          {groupedSeasons.length === 0 && (!categories || categories.length === 0) && (
+            <p className="text-sm text-gray-400 text-center py-4">Нет данных</p>
           )}
         </div>
       </div>
@@ -140,6 +212,9 @@ function ScanTable({ rows, labelKey, label, accentColor, tab }) {
     else { setSortCol(col); setSortDir('asc'); }
   }
 
+  const showBind = tab === 'bind';
+  const pctField = showBind ? 'bindPct' : 'scanPct';
+
   const sortedRows = useMemo(() => {
     if (!sortCol || !rows) return rows || [];
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -149,12 +224,15 @@ function ScanTable({ rows, labelKey, label, accentColor, tab }) {
     });
   }, [rows, sortCol, sortDir]);
 
+  // Dynamic colors based on all pct values in table
+  const colorFn = useMemo(() => {
+    const vals = (rows || []).map(r => r[pctField]);
+    return makeColorFn(vals);
+  }, [rows, pctField]);
+
   if (!rows || rows.length === 0) {
     return <p className="text-sm text-gray-400 text-center py-6">Нет данных</p>;
   }
-
-  const showBind = tab === 'bind';
-  const pctField = showBind ? 'bindPct' : 'scanPct';
 
   function SortIcon({ col }) {
     if (sortCol !== col) return <span className="text-xs opacity-30">↕</span>;
@@ -197,13 +275,17 @@ function ScanTable({ rows, labelKey, label, accentColor, tab }) {
             {sortedRows.map((row, i) => {
               const name = row[labelKey] || row.subdiv || row.store || row.region || '—';
               const pct  = row[pctField];
+              const c = colorFn(pct);
               return (
                 <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-2.5 font-medium text-gray-800 whitespace-nowrap">{name}</td>
                   {showBind ? (
                     <>
                       <td className="px-4 py-2.5 text-center">
-                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)}`}>
+                        <span
+                          className="inline-block px-2 py-0.5 rounded text-xs font-semibold"
+                          style={{ color: c.text, backgroundColor: c.bg }}
+                        >
                           {fmt(pct)}
                         </span>
                       </td>
@@ -212,7 +294,10 @@ function ScanTable({ rows, labelKey, label, accentColor, tab }) {
                   ) : (
                     <>
                       <td className="px-4 py-2.5 text-center">
-                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)}`}>
+                        <span
+                          className="inline-block px-2 py-0.5 rounded text-xs font-semibold"
+                          style={{ color: c.text, backgroundColor: c.bg }}
+                        >
                           {fmt(pct)}
                         </span>
                       </td>
@@ -240,7 +325,7 @@ function ScanTable({ rows, labelKey, label, accentColor, tab }) {
       </div>
 
       {modal && (
-        <DetailsModal
+        <SeasonModal
           title={modal.title}
           seasons={modal.seasons}
           categories={modal.categories}
@@ -259,6 +344,7 @@ function StoresSection({ stores, tab, accentColor }) {
   const [sortCol, setSortCol] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
   const [storeFilter, setStoreFilter] = useState('');
+  const [storeInput, setStoreInput] = useState('');
 
   const showBind = tab === 'bind';
   const pctField = showBind ? 'bindPct' : 'scanPct';
@@ -284,6 +370,12 @@ function StoresSection({ stores, tab, accentColor }) {
     });
   }, [stores]);
 
+  // Dynamic colors based on all store pct values
+  const colorFn = useMemo(() => {
+    const vals = stores.map(r => r[pctField]);
+    return makeColorFn(vals);
+  }, [stores, pctField]);
+
   function toggleGroup(key) {
     setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
   }
@@ -293,8 +385,16 @@ function StoresSection({ stores, tab, accentColor }) {
     else { setSortCol(col); setSortDir('asc'); }
   }
 
+  // Active filter: manual input takes priority over dropdown
+  const activeFilter = storeInput.trim() || storeFilter;
+
   function sortRows(rows) {
-    let filtered = storeFilter ? rows.filter(r => r.store === storeFilter) : rows;
+    let filtered = activeFilter
+      ? rows.filter(r => {
+          const s = String(r.store || '').toLowerCase();
+          return s === activeFilter.toLowerCase() || s.startsWith(activeFilter.toLowerCase());
+        })
+      : rows;
     if (!sortCol) return filtered;
     const dir = sortDir === 'asc' ? 1 : -1;
     return [...filtered].sort((a, b) => {
@@ -319,11 +419,12 @@ function StoresSection({ stores, tab, accentColor }) {
 
   return (
     <>
-      {/* Store filter */}
-      <div className="flex items-center gap-2 mb-3">
+      {/* Store filter row */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {/* Dropdown */}
         <select
           value={storeFilter}
-          onChange={e => setStoreFilter(e.target.value)}
+          onChange={e => { setStoreFilter(e.target.value); setStoreInput(''); }}
           className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none"
         >
           <option value="">Все магазины</option>
@@ -331,8 +432,23 @@ function StoresSection({ stores, tab, accentColor }) {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
-        {storeFilter && (
-          <button onClick={() => setStoreFilter('')} className="p-1 text-gray-400 hover:text-gray-600">
+        {/* Manual input */}
+        <div className="relative flex items-center">
+          <input
+            type="text"
+            value={storeInput}
+            onChange={e => { setStoreInput(e.target.value); setStoreFilter(''); }}
+            placeholder="Введите номер..."
+            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none w-36"
+          />
+          {storeInput && (
+            <button onClick={() => setStoreInput('')} className="absolute right-2 text-gray-400 hover:text-gray-600">
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        {(storeFilter || storeInput) && (
+          <button onClick={() => { setStoreFilter(''); setStoreInput(''); }} className="p-1 text-gray-400 hover:text-gray-600">
             <X size={14} />
           </button>
         )}
@@ -344,6 +460,7 @@ function StoresSection({ stores, tab, accentColor }) {
         const isOpen = expanded[subdiv];
         const validPcts = rows.filter(r => r[pctField] !== null).map(r => r[pctField]);
         const avgPct = validPcts.length ? validPcts.reduce((s, v) => s + v, 0) / validPcts.length : 0;
+        const avgColor = colorFn(avgPct);
 
         return (
           <div key={subdiv} className="border border-gray-200 rounded-xl mb-3 overflow-hidden">
@@ -357,7 +474,7 @@ function StoresSection({ stores, tab, accentColor }) {
                 <span className="font-semibold text-gray-800 text-sm">{subdiv}</span>
                 <span className="text-xs text-gray-500">{rows.length} магазинов</span>
               </div>
-              <span className={`text-sm font-bold ${pctColor(avgPct)}`}>{fmt(avgPct)} ср.</span>
+              <span className="text-sm font-bold" style={{ color: avgColor.text }}>{fmt(avgPct)} ср.</span>
             </button>
 
             {/* Stores table */}
@@ -410,6 +527,7 @@ function StoresSection({ stores, tab, accentColor }) {
                   <tbody>
                     {sorted.map((row, i) => {
                       const pct = row[pctField];
+                      const c = colorFn(pct);
                       const storeName = row.store || '—';
                       const tc = row.tc || '';
                       return (
@@ -421,7 +539,10 @@ function StoresSection({ stores, tab, accentColor }) {
                           {showBind ? (
                             <>
                               <td className="px-4 py-2 text-center">
-                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)}`}>
+                                <span
+                                  className="inline-block px-2 py-0.5 rounded text-xs font-semibold"
+                                  style={{ color: c.text, backgroundColor: c.bg }}
+                                >
                                   {fmt(pct)}
                                 </span>
                               </td>
@@ -430,7 +551,10 @@ function StoresSection({ stores, tab, accentColor }) {
                           ) : (
                             <>
                               <td className="px-4 py-2 text-center">
-                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)}`}>
+                                <span
+                                  className="inline-block px-2 py-0.5 rounded text-xs font-semibold"
+                                  style={{ color: c.text, backgroundColor: c.bg }}
+                                >
                                   {fmt(pct)}
                                 </span>
                               </td>
@@ -462,7 +586,7 @@ function StoresSection({ stores, tab, accentColor }) {
       })}
 
       {modal && (
-        <DetailsModal
+        <SeasonModal
           title={modal.title}
           seasons={modal.seasons}
           categories={modal.categories}
@@ -504,8 +628,8 @@ function exportScan(rows, filename, tab) {
 export default function ScanningTemplate({ scanData, regionLabel, accentColor }) {
   const { loadScanningFiles } = useData();
   const navigate = useNavigate();
-  const [tab, setTab] = useState('scan'); // 'scan' | 'bind'
-  const [section, setSection] = useState('regions'); // 'regions' | 'subdivisions' | 'stores'
+  const [tab, setTab] = useState('scan');
+  const [section, setSection] = useState('regions');
 
   if (!scanData) {
     return (
@@ -542,10 +666,10 @@ export default function ScanningTemplate({ scanData, regionLabel, accentColor })
           <p className="text-xs text-gray-500">Период отчёта</p>
           <p className="font-semibold text-gray-800 text-sm">{period || '—'}</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 font-medium">&lt; 80% — хорошо</span>
-          <span className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700 font-medium">80–90% — внимание</span>
-          <span className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 font-medium">≥ 90% — проблема</span>
+        <div className="flex gap-2 flex-wrap text-xs">
+          <span className="px-2 py-1 rounded font-medium" style={{ backgroundColor: '#ef444422', color: '#ef4444' }}>Хуже всех — красный</span>
+          <span className="px-2 py-1 rounded font-medium" style={{ backgroundColor: '#eab30822', color: '#ca8a04' }}>Средний — жёлтый</span>
+          <span className="px-2 py-1 rounded font-medium" style={{ backgroundColor: '#22c55e22', color: '#16a34a' }}>Лучше всех — зелёный</span>
         </div>
       </div>
 
