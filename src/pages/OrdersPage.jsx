@@ -190,6 +190,13 @@ export default function OrdersPage() {
   const [groupFilter, setGroupFilter]     = useState('');
   const [dateFrom, setDateFrom]           = useState('');  // YYYY-MM-DD
   const [storeFilter, setStoreFilter]     = useState('');
+  const [sortCol, setSortCol]             = useState(null);  // 'store' | 'date' | 'days' | 'ordernum'
+  const [sortDir, setSortDir]             = useState('asc');
+
+  function handleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  }
 
   const enriched = useMemo(() => {
     return spbDetail
@@ -240,13 +247,26 @@ export default function OrdersPage() {
       });
     }
     if (storeFilter) data = data.filter(r => String(r.row['Магазин'] || '') === storeFilter);
+    const dir = sortDir === 'asc' ? 1 : -1;
     return data.sort((a, b) => {
+      if (sortCol === 'store') {
+        const na = parseFloat(String(a.row['Магазин'] || '')), nb = parseFloat(String(b.row['Магазин'] || ''));
+        if (!isNaN(na) && !isNaN(nb)) return (na - nb) * dir;
+        return String(a.row['Магазин'] || '').localeCompare(String(b.row['Магазин'] || ''), 'ru') * dir;
+      }
+      if (sortCol === 'date') {
+        const da = parseDate(a.row['Дата создания']), db = parseDate(b.row['Дата создания']);
+        return ((da?.getTime() || 0) - (db?.getTime() || 0)) * dir;
+      }
+      if (sortCol === 'days') return ((a.days || 0) - (b.days || 0)) * dir;
+      if (sortCol === 'ordernum') return String(getOrderNum(a.row) || '').localeCompare(String(getOrderNum(b.row) || ''), 'ru') * dir;
+      // default: urgency then days desc
       const orderMap = { critical: 0, high: 1, medium: 2, ok: 3, assembled: 4, cancelled: 5, completed: 6 };
       const ao = orderMap[a.urgency] ?? 9, bo = orderMap[b.urgency] ?? 9;
       if (ao !== bo) return ao - bo;
       return (b.days || 0) - (a.days || 0);
     });
-  }, [enriched, overdue, urgencyFilter, destFilter, statusFilter, subdivFilter, groupFilter, dateFrom, storeFilter]);
+  }, [enriched, overdue, urgencyFilter, destFilter, statusFilter, subdivFilter, groupFilter, dateFrom, storeFilter, sortCol, sortDir]);
 
   const counts = useMemo(() => ({
     total:     enriched.length,
@@ -509,16 +529,32 @@ export default function OrdersPage() {
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Срочность</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Подразделение</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Магазин</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Дата создания</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Номер заказа</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Дней</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Статус</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Куда перебрасываем</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Кол-во</th>
-                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">Группа</th>
+                {[
+                  { label: 'Срочность',         col: null },
+                  { label: 'Подразделение',      col: null },
+                  { label: 'Магазин',            col: 'store' },
+                  { label: 'Дата создания',      col: 'date' },
+                  { label: 'Номер заказа',       col: 'ordernum' },
+                  { label: 'Дней',               col: 'days' },
+                  { label: 'Статус',             col: null },
+                  { label: 'Куда перебрасываем', col: null },
+                  { label: 'Кол-во',             col: null },
+                  { label: 'Группа',             col: null },
+                ].map(({ label, col }) => (
+                  <th key={label}
+                    className={`px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap${col ? ' cursor-pointer select-none hover:text-gray-900' : ''}`}
+                    onClick={col ? () => handleSort(col) : undefined}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {label}
+                      {col && (
+                        <span className="text-xs opacity-40">
+                          {sortCol === col ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+                        </span>
+                      )}
+                    </span>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
