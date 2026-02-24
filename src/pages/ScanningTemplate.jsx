@@ -6,18 +6,19 @@ import * as XLSX from 'xlsx';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
+// Inverted scale: higher % = redder (worse). Used in Приёмка only.
 function pctColor(v) {
   if (v === null) return 'text-gray-400';
-  if (v >= 90) return 'text-green-600';
+  if (v >= 90) return 'text-red-600';
   if (v >= 80) return 'text-amber-600';
-  return 'text-red-600';
+  return 'text-green-600';
 }
 
 function pctBg(v) {
-  if (v === null) return 'bg-gray-100';
-  if (v >= 90) return 'bg-green-100';
-  if (v >= 80) return 'bg-amber-100';
-  return 'bg-red-100';
+  if (v === null) return 'bg-gray-100 text-gray-400';
+  if (v >= 90) return 'bg-red-100 text-red-700';
+  if (v >= 80) return 'bg-amber-100 text-amber-700';
+  return 'bg-green-100 text-green-700';
 }
 
 function fmt(v, decimals = 1) {
@@ -30,13 +31,16 @@ function fmtNum(v) {
   return Number(v).toLocaleString('ru-RU');
 }
 
-// ─── Season modal ─────────────────────────────────────────────────────────
+// ─── Details modal (Seasons + Categories tabs) ─────────────────────────────
 
-function SeasonModal({ title, seasons, onClose }) {
-  // Group by season
-  const grouped = useMemo(() => {
+function DetailsModal({ title, seasons, categories, onClose }) {
+  const hasCategories = categories && categories.length > 0;
+  const hasSeasons = seasons && seasons.length > 0;
+  const [modalTab, setModalTab] = useState(hasSeasons ? 'seasons' : 'categories');
+
+  const groupedSeasons = useMemo(() => {
     const map = {};
-    seasons.forEach(({ season, direction, value }) => {
+    (seasons || []).forEach(({ season, direction, value }) => {
       if (!map[season]) map[season] = [];
       map[season].push({ direction, value });
     });
@@ -57,28 +61,66 @@ function SeasonModal({ title, seasons, onClose }) {
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
           <div>
             <h2 className="font-bold text-gray-900 text-base">{title}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Сканирование по сезонам, %</p>
+            <p className="text-xs text-gray-400 mt-0.5">Детализация по сезонам и категориям</p>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
             <X size={18} />
           </button>
         </div>
-        <div className="overflow-y-auto flex-1 px-5 py-3 space-y-4">
-          {grouped.map(([season, dirs]) => (
-            <div key={season}>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{season}</p>
-              <div className="space-y-1">
-                {dirs.map(({ direction, value }) => (
-                  <div key={direction} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-gray-50">
-                    <span className="text-sm text-gray-700">{direction}</span>
-                    <span className={`text-sm font-semibold ${pctColor(value)}`}>{fmt(value)}</span>
+
+        {/* Modal tabs — show only if both exist */}
+        {hasCategories && hasSeasons && (
+          <div className="flex gap-2 px-5 pt-3 flex-shrink-0">
+            {[
+              { key: 'seasons',    label: 'Сезоны' },
+              { key: 'categories', label: 'Категории' },
+            ].map(t => (
+              <button key={t.key} onClick={() => setModalTab(t.key)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={modalTab === t.key
+                  ? { backgroundColor: '#111827', color: 'white' }
+                  : { backgroundColor: '#f3f4f6', color: '#4b5563' }
+                }
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="overflow-y-auto flex-1 px-5 py-3 space-y-3">
+          {modalTab === 'seasons' && (
+            <>
+              {groupedSeasons.map(([season, dirs]) => (
+                <div key={season}>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{season}</p>
+                  <div className="space-y-1">
+                    {dirs.map(({ direction, value }) => (
+                      <div key={direction} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-gray-50">
+                        <span className="text-sm text-gray-700">{direction}</span>
+                        <span className={`text-sm font-semibold ${pctColor(value)}`}>{fmt(value)}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          ))}
-          {grouped.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-4">Нет данных по сезонам</p>
+                </div>
+              ))}
+              {groupedSeasons.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-4">Нет данных по сезонам</p>
+              )}
+            </>
+          )}
+
+          {modalTab === 'categories' && (
+            <>
+              {hasCategories ? (categories || []).map(({ category, value }) => (
+                <div key={category} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-gray-50">
+                  <span className="text-sm text-gray-700">{category}</span>
+                  <span className={`text-sm font-semibold ${pctColor(value)}`}>{fmt(value)}</span>
+                </div>
+              )) : (
+                <p className="text-sm text-gray-400 text-center py-4">Нет данных по категориям</p>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -89,13 +131,35 @@ function SeasonModal({ title, seasons, onClose }) {
 // ─── Scanning table (regions / subdivisions) ──────────────────────────────
 
 function ScanTable({ rows, labelKey, label, accentColor, tab }) {
-  const [modal, setModal] = useState(null); // { title, seasons }
+  const [modal, setModal] = useState(null);
+  const [sortCol, setSortCol] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+
+  function handleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  }
+
+  const sortedRows = useMemo(() => {
+    if (!sortCol || !rows) return rows || [];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const av = a[sortCol] ?? -1, bv = b[sortCol] ?? -1;
+      return (av - bv) * dir;
+    });
+  }, [rows, sortCol, sortDir]);
 
   if (!rows || rows.length === 0) {
     return <p className="text-sm text-gray-400 text-center py-6">Нет данных</p>;
   }
 
   const showBind = tab === 'bind';
+  const pctField = showBind ? 'bindPct' : 'scanPct';
+
+  function SortIcon({ col }) {
+    if (sortCol !== col) return <span className="text-xs opacity-30">↕</span>;
+    return <span className="text-xs opacity-70">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  }
 
   return (
     <>
@@ -106,30 +170,40 @@ function ScanTable({ rows, labelKey, label, accentColor, tab }) {
               <th className="px-4 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">{label}</th>
               {showBind ? (
                 <>
-                  <th className="px-4 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">Нет привязки, %</th>
+                  <th
+                    className="px-4 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900"
+                    onClick={() => handleSort('bindPct')}
+                  >
+                    <span className="inline-flex items-center gap-1">Нет привязки, % <SortIcon col="bindPct" /></span>
+                  </th>
                   <th className="px-4 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">Артикулов</th>
                 </>
               ) : (
                 <>
-                  <th className="px-4 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">Нет скан, %</th>
+                  <th
+                    className="px-4 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900"
+                    onClick={() => handleSort('scanPct')}
+                  >
+                    <span className="inline-flex items-center gap-1">Нет скан, % <SortIcon col="scanPct" /></span>
+                  </th>
                   <th className="px-4 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">Артикулов</th>
                   <th className="px-4 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">Штук</th>
-                  <th className="px-4 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">Сезоны</th>
+                  <th className="px-4 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">Детали</th>
                 </>
               )}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, i) => {
+            {sortedRows.map((row, i) => {
               const name = row[labelKey] || row.subdiv || row.store || row.region || '—';
-              const pct  = showBind ? row.bindPct : row.scanPct;
+              const pct  = row[pctField];
               return (
                 <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-2.5 font-medium text-gray-800 whitespace-nowrap">{name}</td>
                   {showBind ? (
                     <>
                       <td className="px-4 py-2.5 text-center">
-                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)} ${pctColor(pct)}`}>
+                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)}`}>
                           {fmt(pct)}
                         </span>
                       </td>
@@ -138,16 +212,16 @@ function ScanTable({ rows, labelKey, label, accentColor, tab }) {
                   ) : (
                     <>
                       <td className="px-4 py-2.5 text-center">
-                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)} ${pctColor(pct)}`}>
+                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)}`}>
                           {fmt(pct)}
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-center text-gray-600">{fmtNum(row.scanArt)}</td>
                       <td className="px-4 py-2.5 text-center text-gray-600">{fmtNum(row.scanQty)}</td>
                       <td className="px-4 py-2.5 text-center">
-                        {row.seasons && row.seasons.length > 0 ? (
+                        {(row.seasons?.length > 0 || row.categories?.length > 0) ? (
                           <button
-                            onClick={() => setModal({ title: name, seasons: row.seasons })}
+                            onClick={() => setModal({ title: name, seasons: row.seasons || [], categories: row.categories || [] })}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-white transition-colors"
                             style={{ backgroundColor: accentColor }}
                           >
@@ -166,7 +240,12 @@ function ScanTable({ rows, labelKey, label, accentColor, tab }) {
       </div>
 
       {modal && (
-        <SeasonModal title={modal.title} seasons={modal.seasons} onClose={() => setModal(null)} />
+        <DetailsModal
+          title={modal.title}
+          seasons={modal.seasons}
+          categories={modal.categories}
+          onClose={() => setModal(null)}
+        />
       )}
     </>
   );
@@ -177,8 +256,12 @@ function ScanTable({ rows, labelKey, label, accentColor, tab }) {
 function StoresSection({ stores, tab, accentColor }) {
   const [expanded, setExpanded] = useState({});
   const [modal, setModal] = useState(null);
-  const [sortCol, setSortCol] = useState('scanPct');
+  const [sortCol, setSortCol] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
+  const [storeFilter, setStoreFilter] = useState('');
+
+  const showBind = tab === 'bind';
+  const pctField = showBind ? 'bindPct' : 'scanPct';
 
   // Group by subdivision
   const grouped = useMemo(() => {
@@ -191,6 +274,16 @@ function StoresSection({ stores, tab, accentColor }) {
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0], 'ru'));
   }, [stores]);
 
+  // Unique sorted store numbers for filter dropdown
+  const allStoreNums = useMemo(() => {
+    const nums = [...new Set(stores.map(r => r.store).filter(Boolean))];
+    return nums.sort((a, b) => {
+      const na = parseFloat(a), nb = parseFloat(b);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.localeCompare(b, 'ru');
+    });
+  }, [stores]);
+
   function toggleGroup(key) {
     setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
   }
@@ -201,15 +294,24 @@ function StoresSection({ stores, tab, accentColor }) {
   }
 
   function sortRows(rows) {
+    let filtered = storeFilter ? rows.filter(r => r.store === storeFilter) : rows;
+    if (!sortCol) return filtered;
     const dir = sortDir === 'asc' ? 1 : -1;
-    return [...rows].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
+      if (sortCol === 'store') {
+        const na = parseFloat(a.store || ''), nb = parseFloat(b.store || '');
+        if (!isNaN(na) && !isNaN(nb)) return (na - nb) * dir;
+        return String(a.store || '').localeCompare(String(b.store || ''), 'ru') * dir;
+      }
       const av = a[sortCol] ?? -1, bv = b[sortCol] ?? -1;
-      if (typeof av === 'number') return (av - bv) * dir;
-      return String(av).localeCompare(String(bv), 'ru') * dir;
+      return (av - bv) * dir;
     });
   }
 
-  const showBind = tab === 'bind';
+  function SortIcon({ col }) {
+    if (sortCol !== col) return <span className="text-xs opacity-30">↕</span>;
+    return <span className="text-xs opacity-70">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  }
 
   if (!stores || stores.length === 0) {
     return <p className="text-sm text-gray-400 text-center py-6">Нет данных по магазинам</p>;
@@ -217,12 +319,31 @@ function StoresSection({ stores, tab, accentColor }) {
 
   return (
     <>
+      {/* Store filter */}
+      <div className="flex items-center gap-2 mb-3">
+        <select
+          value={storeFilter}
+          onChange={e => setStoreFilter(e.target.value)}
+          className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none"
+        >
+          <option value="">Все магазины</option>
+          {allStoreNums.map(s => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        {storeFilter && (
+          <button onClick={() => setStoreFilter('')} className="p-1 text-gray-400 hover:text-gray-600">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
       {grouped.map(([subdiv, rows]) => {
-        const isOpen = expanded[subdiv];
         const sorted = sortRows(rows);
-        const avgPct = showBind
-          ? (rows.filter(r => r.bindPct !== null).reduce((s, r) => s + r.bindPct, 0) / rows.filter(r => r.bindPct !== null).length || 0)
-          : (rows.filter(r => r.scanPct !== null).reduce((s, r) => s + r.scanPct, 0) / rows.filter(r => r.scanPct !== null).length || 0);
+        if (sorted.length === 0) return null;
+        const isOpen = expanded[subdiv];
+        const validPcts = rows.filter(r => r[pctField] !== null).map(r => r[pctField]);
+        const avgPct = validPcts.length ? validPcts.reduce((s, v) => s + v, 0) / validPcts.length : 0;
 
         return (
           <div key={subdiv} className="border border-gray-200 rounded-xl mb-3 overflow-hidden">
@@ -245,35 +366,50 @@ function StoresSection({ stores, tab, accentColor }) {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-white border-b border-gray-100">
-                      <th className="px-4 py-2 text-left font-semibold text-gray-500">Магазин / ТЦ</th>
+                      <th
+                        className="px-4 py-2 text-left font-semibold text-gray-500 cursor-pointer select-none hover:text-gray-800"
+                        onClick={() => handleSort('store')}
+                      >
+                        <span className="inline-flex items-center gap-1">Магазин / ТЦ <SortIcon col="store" /></span>
+                      </th>
                       {showBind ? (
                         <>
-                          <th className="px-4 py-2 text-center font-semibold text-gray-500 cursor-pointer select-none hover:text-gray-800" onClick={() => handleSort('bindPct')}>
-                            Нет привязки, % {sortCol === 'bindPct' ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+                          <th
+                            className="px-4 py-2 text-center font-semibold text-gray-500 cursor-pointer select-none hover:text-gray-800"
+                            onClick={() => handleSort('bindPct')}
+                          >
+                            <span className="inline-flex items-center gap-1">Нет привязки, % <SortIcon col="bindPct" /></span>
                           </th>
-                          <th className="px-4 py-2 text-center font-semibold text-gray-500 cursor-pointer select-none hover:text-gray-800" onClick={() => handleSort('bindArt')}>
-                            Артикулов {sortCol === 'bindArt' ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
-                          </th>
+                          <th className="px-4 py-2 text-center font-semibold text-gray-500">Артикулов</th>
                         </>
                       ) : (
                         <>
-                          <th className="px-4 py-2 text-center font-semibold text-gray-500 cursor-pointer select-none hover:text-gray-800" onClick={() => handleSort('scanPct')}>
-                            Нет скан, % {sortCol === 'scanPct' ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+                          <th
+                            className="px-4 py-2 text-center font-semibold text-gray-500 cursor-pointer select-none hover:text-gray-800"
+                            onClick={() => handleSort('scanPct')}
+                          >
+                            <span className="inline-flex items-center gap-1">Нет скан, % <SortIcon col="scanPct" /></span>
                           </th>
-                          <th className="px-4 py-2 text-center font-semibold text-gray-500 cursor-pointer select-none hover:text-gray-800" onClick={() => handleSort('scanArt')}>
-                            Артикулов {sortCol === 'scanArt' ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+                          <th
+                            className="px-4 py-2 text-center font-semibold text-gray-500 cursor-pointer select-none hover:text-gray-800"
+                            onClick={() => handleSort('scanArt')}
+                          >
+                            <span className="inline-flex items-center gap-1">Артикулов <SortIcon col="scanArt" /></span>
                           </th>
-                          <th className="px-4 py-2 text-center font-semibold text-gray-500 cursor-pointer select-none hover:text-gray-800" onClick={() => handleSort('scanQty')}>
-                            Штук {sortCol === 'scanQty' ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+                          <th
+                            className="px-4 py-2 text-center font-semibold text-gray-500 cursor-pointer select-none hover:text-gray-800"
+                            onClick={() => handleSort('scanQty')}
+                          >
+                            <span className="inline-flex items-center gap-1">Штук <SortIcon col="scanQty" /></span>
                           </th>
-                          <th className="px-4 py-2 text-center font-semibold text-gray-500">Сезоны</th>
+                          <th className="px-4 py-2 text-center font-semibold text-gray-500">Детали</th>
                         </>
                       )}
                     </tr>
                   </thead>
                   <tbody>
                     {sorted.map((row, i) => {
-                      const pct = showBind ? row.bindPct : row.scanPct;
+                      const pct = row[pctField];
                       const storeName = row.store || '—';
                       const tc = row.tc || '';
                       return (
@@ -285,7 +421,7 @@ function StoresSection({ stores, tab, accentColor }) {
                           {showBind ? (
                             <>
                               <td className="px-4 py-2 text-center">
-                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)} ${pctColor(pct)}`}>
+                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)}`}>
                                   {fmt(pct)}
                                 </span>
                               </td>
@@ -294,21 +430,21 @@ function StoresSection({ stores, tab, accentColor }) {
                           ) : (
                             <>
                               <td className="px-4 py-2 text-center">
-                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)} ${pctColor(pct)}`}>
+                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${pctBg(pct)}`}>
                                   {fmt(pct)}
                                 </span>
                               </td>
                               <td className="px-4 py-2 text-center text-gray-600">{fmtNum(row.scanArt)}</td>
                               <td className="px-4 py-2 text-center text-gray-600">{fmtNum(row.scanQty)}</td>
                               <td className="px-4 py-2 text-center">
-                                {row.seasons && row.seasons.length > 0 ? (
+                                {(row.seasons?.length > 0 || row.categories?.length > 0) ? (
                                   <button
-                                    onClick={() => setModal({ title: `${storeName} — ${tc}`, seasons: row.seasons })}
+                                    onClick={() => setModal({ title: `${storeName}${tc ? ' — ' + tc : ''}`, seasons: row.seasons || [], categories: row.categories || [] })}
                                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-white"
                                     style={{ backgroundColor: accentColor }}
                                   >
                                     <ChevronDown size={10} />
-                                    Сезоны
+                                    Детали
                                   </button>
                                 ) : '—'}
                               </td>
@@ -326,7 +462,12 @@ function StoresSection({ stores, tab, accentColor }) {
       })}
 
       {modal && (
-        <SeasonModal title={modal.title} seasons={modal.seasons} onClose={() => setModal(null)} />
+        <DetailsModal
+          title={modal.title}
+          seasons={modal.seasons}
+          categories={modal.categories}
+          onClose={() => setModal(null)}
+        />
       )}
     </>
   );
@@ -360,8 +501,8 @@ function exportScan(rows, filename, tab) {
 
 // ─── Main template ────────────────────────────────────────────────────────
 
-export default function ScanningTemplate({ scanData, regionLabel, accentColor, uploadPath }) {
-  const { loading, loadScanningFiles } = useData();
+export default function ScanningTemplate({ scanData, regionLabel, accentColor }) {
+  const { loadScanningFiles } = useData();
   const navigate = useNavigate();
   const [tab, setTab] = useState('scan'); // 'scan' | 'bind'
   const [section, setSection] = useState('regions'); // 'regions' | 'subdivisions' | 'stores'
@@ -389,14 +530,9 @@ export default function ScanningTemplate({ scanData, regionLabel, accentColor, u
 
   const { period, regions, subdivisions, stores } = scanData;
 
-  // Filter to this region only
-  const regionRows = regions.filter(r => r.region === regionLabel || r.subdiv === 'ИТОГО');
-  const subdivRows = subdivisions;
-  const storeRows  = stores;
-
-  const currentRows = section === 'regions'      ? regionRows
-                    : section === 'subdivisions'  ? subdivRows
-                    : storeRows;
+  const currentRows = section === 'regions'      ? regions
+                    : section === 'subdivisions'  ? subdivisions
+                    : stores;
 
   return (
     <div className="space-y-4">
@@ -406,10 +542,10 @@ export default function ScanningTemplate({ scanData, regionLabel, accentColor, u
           <p className="text-xs text-gray-500">Период отчёта</p>
           <p className="font-semibold text-gray-800 text-sm">{period || '—'}</p>
         </div>
-        <div className="flex gap-2">
-          <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 font-medium">≥ 90% — хорошо</span>
+        <div className="flex gap-2 flex-wrap">
+          <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 font-medium">&lt; 80% — хорошо</span>
           <span className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700 font-medium">80–90% — внимание</span>
-          <span className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 font-medium">&lt; 80% — проблема</span>
+          <span className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 font-medium">≥ 90% — проблема</span>
         </div>
       </div>
 
@@ -454,7 +590,7 @@ export default function ScanningTemplate({ scanData, regionLabel, accentColor, u
       <div className="flex justify-end">
         <button
           onClick={() => exportScan(
-            section === 'stores' ? storeRows : currentRows,
+            currentRows,
             `Сканирование_${regionLabel}_${section}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')}.xlsx`,
             tab
           )}
@@ -470,12 +606,12 @@ export default function ScanningTemplate({ scanData, regionLabel, accentColor, u
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         {section === 'stores' ? (
           <div className="p-4">
-            <StoresSection stores={storeRows} tab={tab} accentColor={accentColor} />
+            <StoresSection stores={stores} tab={tab} accentColor={accentColor} />
           </div>
         ) : (
           <ScanTable
             rows={currentRows}
-            labelKey={section === 'regions' ? 'tc' : 'subdiv'}
+            labelKey={section === 'regions' ? 'region' : 'subdiv'}
             label={section === 'regions' ? 'Регион / Итого' : 'Подразделение'}
             accentColor={accentColor}
             tab={tab}

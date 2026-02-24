@@ -4,9 +4,10 @@ import * as XLSX from 'xlsx';
  * Parse a "Нет сканирования" Excel file.
  * Returns { region, period, regions, subdivisions, stores }
  * Each row has: Регион, Подразделение, Магазин, ТЦ,
- *   scanPct, scanArt, scanQty,          ← cols E F G
- *   bindPct, bindArt,                   ← cols H I
- *   seasons: [ { season, direction, value } ]  ← cols J+
+ *   scanPct, scanArt, scanQty,          ← cols E F G (idx 4 5 6)
+ *   bindPct, bindArt,                   ← cols H I   (idx 7 8)
+ *   seasons:    [ { season, direction, value } ]  ← cols J+ (idx 10..41)
+ *   categories: [ { category, value } ]           ← cols AQ+ (idx 42+)
  */
 function parseSheet(ws, sheetName) {
   const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
@@ -15,13 +16,16 @@ function parseSheet(ws, sheetName) {
   const periodRow = raw[2] || [];
   const period = periodRow[0] ? String(periodRow[0]).replace('Период отчета: ', '').trim() : '';
 
-  // Season/direction headers are in rows 2 and 3 (index 2, 3), data cols start at index 10
+  // Season/direction headers are in rows 2 and 3 (index 2, 3)
+  // Category headers are in row 3 (index 3), starting at col AQ (index 42)
   const seasonRow = raw[2] || [];
   const dirRow    = raw[3] || [];
 
-  // Build season+direction label for each column index >= 10
+  const maxCols = (raw[8] || raw[4] || []).length;
+
+  // Season cols: indices 10..41
   const seasonCols = [];
-  for (let c = 10; c < (raw[4] || []).length; c++) {
+  for (let c = 10; c <= 41 && c < maxCols; c++) {
     const s = seasonRow[c] ? String(seasonRow[c]).replace('/', '').trim() : null;
     const d = dirRow[c]    ? String(dirRow[c]).trim() : null;
     if (s && d && s !== '-' && d !== '-' && s !== '0' && d !== '0') {
@@ -29,7 +33,17 @@ function parseSheet(ws, sheetName) {
     }
   }
 
-  // Data rows start at index 8 (row index 8 is first data row)
+  // Category cols: indices 42+
+  // Header row for category name is row 3 (dirRow), category label in row 3
+  const catCols = [];
+  for (let c = 42; c < maxCols; c++) {
+    const label = dirRow[c] ? String(dirRow[c]).trim() : null;
+    if (label && label !== '-' && label !== '0') {
+      catCols.push({ colIdx: c, category: label });
+    }
+  }
+
+  // Data rows start at index 8
   const data = [];
   for (let i = 8; i < raw.length; i++) {
     const row = raw[i];
@@ -38,23 +52,31 @@ function parseSheet(ws, sheetName) {
     if (!region || region === 'Region' || region === 'Регион') continue;
 
     const obj = {
-      region:    region,
-      subdiv:    row[1] ? String(row[1]).trim() : null,
-      store:     row[2] ? String(row[2]).trim() : null,
-      tc:        row[3] ? String(row[3]).trim() : null,
-      scanPct:   parsePct(row[4]),
-      scanArt:   toNum(row[5]),
-      scanQty:   toNum(row[6]),
-      bindPct:   parsePct(row[7]),
-      bindArt:   toNum(row[8]),
-      seasons:   [],
-      _sheet:    sheetName,
+      region:     region,
+      subdiv:     row[1] ? String(row[1]).trim() : null,
+      store:      row[2] ? String(row[2]).trim() : null,
+      tc:         row[3] ? String(row[3]).trim() : null,
+      scanPct:    parsePct(row[4]),
+      scanArt:    toNum(row[5]),
+      scanQty:    toNum(row[6]),
+      bindPct:    parsePct(row[7]),
+      bindArt:    toNum(row[8]),
+      seasons:    [],
+      categories: [],
+      _sheet:     sheetName,
     };
 
     for (const sc of seasonCols) {
       const val = parsePct(raw[i][sc.colIdx]);
       if (val !== null) {
         obj.seasons.push({ season: sc.season, direction: sc.direction, value: val });
+      }
+    }
+
+    for (const cc of catCols) {
+      const val = parsePct(raw[i][cc.colIdx]);
+      if (val !== null) {
+        obj.categories.push({ category: cc.category, value: val });
       }
     }
 

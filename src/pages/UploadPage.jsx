@@ -6,14 +6,14 @@ import { Upload, FileSpreadsheet, X, CheckCircle, AlertCircle, Loader } from 'lu
 const BRAND = '#E91E8C';
 
 export default function UploadPage() {
-  const { loadFiles, loading, error, parsedFiles } = useData();
+  const { loadFiles, loading, error, parsedFiles, scanningFiles } = useData();
   const navigate = useNavigate();
   const [dragOver, setDragOver] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [justLoaded, setJustLoaded] = useState(false);
   const fileInputRef = useRef(null);
 
-  // After successful load — auto-navigate to dashboard
+  // After successful load — auto-navigate to dashboard (only if report files loaded)
   useEffect(() => {
     if (justLoaded && !loading && !error && parsedFiles.length > 0) {
       const timer = setTimeout(() => navigate('/obuv'), 1200);
@@ -59,7 +59,7 @@ export default function UploadPage() {
     e.target.value = '';
   };
 
-  const alreadyLoaded = parsedFiles.length > 0;
+  const alreadyLoaded = parsedFiles.length > 0 || (scanningFiles && scanningFiles.length > 0);
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -101,6 +101,12 @@ export default function UploadPage() {
           <p className="text-sm font-semibold">Файлы загружены! Переходим на Dashboard...</p>
         </div>
       )}
+      {justLoaded && !loading && !error && parsedFiles.length === 0 && scanningFiles && scanningFiles.length > 0 && (
+        <div className="flex items-center gap-3 p-4 rounded-xl border border-green-300 bg-green-50 text-green-800">
+          <CheckCircle size={20} className="flex-shrink-0 text-green-600" />
+          <p className="text-sm font-semibold">Файлы приёмки загружены!</p>
+        </div>
+      )}
 
       {/* Instructions */}
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
@@ -109,10 +115,10 @@ export default function UploadPage() {
           Как загрузить данные
         </h2>
         <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
-          <li>Перетащите Excel-файлы (.xlsx) в зону ниже или нажмите для выбора</li>
-          <li>Поддерживаются файлы: "Отчет ДР Неделя", "Отчет ДР Месяц" и их варианты</li>
-          <li>Можно загрузить несколько файлов одновременно</li>
-          <li>KPI считаются по всем регионам, детали по магазинам — по СПБ</li>
+          <li>Перетащите все Excel-файлы (.xlsx) в зону ниже или нажмите для выбора</li>
+          <li>Файлы вывозов: "Отчет ДР Неделя", "Отчет ДР Месяц" и их варианты</li>
+          <li>Файлы приёмки: "Нет сканирования, Неделя-141" (СПБ) и "Неделя-142" (БЕЛ)</li>
+          <li>Все файлы автоматически распределяются по разделам</li>
         </ul>
       </div>
 
@@ -233,22 +239,50 @@ export default function UploadPage() {
                 </div>
               </div>
             ))}
+            {scanningFiles && scanningFiles.map(f => (
+              <div key={f.fileName} className="p-3 rounded-lg border border-green-200" style={{ backgroundColor: '#f0fdf4' }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-semibold text-gray-800 truncate mr-2">{f.fileName}</span>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-white border border-green-400 text-green-700">
+                    Приёмка · {f.fileRegion}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">{f.period || 'Период не определён'}</p>
+                <div className="flex gap-4 mt-1.5 text-xs text-gray-500">
+                  <span>Регионов: {f.regions.length}</span>
+                  <span>Подразделений: {f.subdivisions.length}</span>
+                  <span>Магазинов: {f.stores.length}</span>
+                </div>
+              </div>
+            ))}
           </div>
 
-          <div className="mt-4 flex gap-2">
-            <button
-              onClick={() => navigate('/obuv')}
-              className="flex-1 px-4 py-2.5 text-white rounded-lg text-sm font-semibold transition-colors"
-              style={{ backgroundColor: BRAND }}
-            >
-              Перейти на Dashboard
-            </button>
-            <button
-              onClick={() => navigate('/obuv/vyvoz')}
-              className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-            >
-              Смотреть вывозы
-            </button>
+          <div className="mt-4 flex gap-2 flex-wrap">
+            {parsedFiles.length > 0 && (
+              <button
+                onClick={() => navigate('/obuv')}
+                className="flex-1 px-4 py-2.5 text-white rounded-lg text-sm font-semibold transition-colors"
+                style={{ backgroundColor: BRAND }}
+              >
+                Перейти на Dashboard
+              </button>
+            )}
+            {scanningFiles && scanningFiles.some(f => f.fileRegion === 'СПБ') && (
+              <button
+                onClick={() => navigate('/acceptance/spb')}
+                className="flex-1 px-4 py-2.5 border border-green-300 text-green-700 bg-green-50 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors"
+              >
+                Приёмка СПБ
+              </button>
+            )}
+            {scanningFiles && scanningFiles.some(f => f.fileRegion === 'БЕЛ') && (
+              <button
+                onClick={() => navigate('/acceptance/bel')}
+                className="flex-1 px-4 py-2.5 border border-green-300 text-green-700 bg-green-50 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors"
+              >
+                Приёмка БЕЛ
+              </button>
+            )}
           </div>
         </div>
       )}
