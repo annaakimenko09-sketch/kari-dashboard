@@ -11,11 +11,20 @@ import {
   ChevronRight,
   ChevronDown,
   X,
+  Gem,
 } from 'lucide-react';
 
 const BRAND = '#E91E8C';
 
 const sections = [
+  {
+    label: 'ЮИ',
+    color: '#f59e0b',
+    items: [
+      { path: '/jewelry/spb', label: 'СПБ', icon: Gem },
+      { path: '/jewelry/bel', label: 'БЕЛ', icon: Gem },
+    ],
+  },
   {
     label: 'Обувь',
     color: '#E91E8C',
@@ -59,11 +68,11 @@ const sections = [
 ];
 
 // Which section labels to show as expandable groups (not standalone items)
-const GROUP_LABELS = ['Обувь', 'Кидс', 'Приёмка'];
+const GROUP_LABELS = ['ЮИ', 'Обувь', 'Кидс', 'Приёмка'];
 
 export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) {
   // Track expanded groups
-  const [expanded, setExpanded] = useState({ 'Обувь': true, 'Кидс': true, 'Приёмка': true });
+  const [expanded, setExpanded] = useState({ 'ЮИ': true, 'Обувь': true, 'Кидс': true, 'Приёмка': true });
 
   function toggleGroup(label) {
     setExpanded(prev => ({ ...prev, [label]: !prev[label] }));

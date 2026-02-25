@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback } from 'react';
 import { parseExcelFiles, mergeSummaryData, mergeDetailData, mergeRegionTotals } from '../utils/excelParser';
 import { parseScanningFiles } from '../utils/scanningParser';
+import { parseJewelryFiles } from '../utils/jewelryParser';
 
 const DataContext = createContext(null);
 
@@ -9,18 +10,25 @@ export function DataProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [scanningFiles, setScanningFiles] = useState([]);
+  const [jewelryItogi, setJewelryItogi] = useState([]);     // ЮИ Итоги (СПБ и БЕЛ)
+  const [jewelryUnexposed, setJewelryUnexposed] = useState([]); // Невыставленный товар
 
   const loadFiles = useCallback(async (fileList) => {
     setLoading(true);
     setError(null);
     try {
-      // Split: scanning files ("Нет сканирования") vs vyvoz/report files
-      const scanList = Array.from(fileList).filter(f =>
-        f.name.includes('сканирован') || f.name.toLowerCase().includes('scan')
-      );
-      const reportList = Array.from(fileList).filter(f =>
-        !f.name.includes('сканирован') && !f.name.toLowerCase().includes('scan')
-      );
+      const all = Array.from(fileList);
+
+      const isScanning  = f => f.name.includes('сканирован') || f.name.toLowerCase().includes('scan');
+      const isJewelry   = f => {
+        const n = f.name.toLowerCase();
+        return n.includes('юи') || n.includes('ювелир') || n.includes('невыставленн');
+      };
+      const isReport    = f => !isScanning(f) && !isJewelry(f);
+
+      const scanList    = all.filter(isScanning);
+      const jewelryList = all.filter(isJewelry);
+      const reportList  = all.filter(isReport);
 
       if (reportList.length > 0) {
         const results = await parseExcelFiles(reportList);
@@ -29,6 +37,11 @@ export function DataProvider({ children }) {
       if (scanList.length > 0) {
         const scanResults = await parseScanningFiles(scanList);
         setScanningFiles(scanResults);
+      }
+      if (jewelryList.length > 0) {
+        const { itogiResults, unexposedResults } = await parseJewelryFiles(jewelryList);
+        if (itogiResults.length > 0) setJewelryItogi(itogiResults);
+        if (unexposedResults.length > 0) setJewelryUnexposed(unexposedResults);
       }
     } catch (err) {
       setError(err.message || 'Ошибка при загрузке файлов');
@@ -98,6 +111,12 @@ export function DataProvider({ children }) {
   const spbScanning = scanningFiles.find(f => f.fileRegion === 'СПБ') || null;
   const belScanning = scanningFiles.find(f => f.fileRegion === 'БЕЛ') || null;
 
+  // ЮИ helpers
+  const spbJewelryItogi = jewelryItogi.find(f => f.fileRegion === 'СПБ') || null;
+  const belJewelryItogi = jewelryItogi.find(f => f.fileRegion === 'БЕЛ') || null;
+  // Невыставленный товар — обычно один файл, берём последний
+  const jewelryUnexposedFile = jewelryUnexposed[jewelryUnexposed.length - 1] || null;
+
   return (
     <DataContext.Provider value={{
       parsedFiles,
@@ -122,6 +141,11 @@ export function DataProvider({ children }) {
       loadScanningFiles,
       spbScanning,
       belScanning,
+      jewelryItogi,
+      jewelryUnexposed,
+      spbJewelryItogi,
+      belJewelryItogi,
+      jewelryUnexposedFile,
     }}>
       {children}
     </DataContext.Provider>

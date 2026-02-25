@@ -13,6 +13,8 @@ import OrdersPage         from './pages/OrdersPage';
 import AcceptancePage     from './pages/AcceptancePage';
 import ScanningSpbPage    from './pages/ScanningSpbPage';
 import ScanningBelPage    from './pages/ScanningBelPage';
+import JewelrySpbPage    from './pages/JewelrySpbPage';
+import JewelryBelPage    from './pages/JewelryBelPage';
 import UploadPage         from './pages/UploadPage';
 
 export default function App() {
@@ -43,6 +45,10 @@ export default function App() {
                 <Route path="acceptance"     element={<ErrorBoundary><AcceptancePage /></ErrorBoundary>} />
                 <Route path="acceptance/spb" element={<ErrorBoundary><ScanningSpbPage /></ErrorBoundary>} />
                 <Route path="acceptance/bel" element={<ErrorBoundary><ScanningBelPage /></ErrorBoundary>} />
+
+                {/* ЮИ */}
+                <Route path="jewelry/spb" element={<ErrorBoundary><JewelrySpbPage /></ErrorBoundary>} />
+                <Route path="jewelry/bel" element={<ErrorBoundary><JewelryBelPage /></ErrorBoundary>} />
 
                 {/* Загрузка */}
                 <Route path="upload"       element={<ErrorBoundary><UploadPage /></ErrorBoundary>} />
