@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Upload, X, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useNavigate } from 'react-router-dom';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 
 // ─── Dynamic gradient color helpers ──────────────────────────────────────
 // Higher % = worse (redder). Colors are computed dynamically relative to
@@ -588,25 +588,110 @@ function StoresSection({ stores, tab, accentColor }) {
 
 // ─── Export helpers ───────────────────────────────────────────────────────
 
+// Convert hex color like "ef4444" to ARGB string "FFEF4444" for xlsx-js-style
+function toARGB(rgb) {
+  return 'FF' + rgb.replace('#', '').toUpperCase();
+}
+
+// Get gradient hex color string (no alpha) for a normalized t value
+function gradientHex(t) {
+  let r, g, b;
+  if (t <= 0.5) {
+    const s = t * 2;
+    r = Math.round(34  + (234 - 34)  * s);
+    g = Math.round(197 + (179 - 197) * s);
+    b = Math.round(94  + (8   - 94)  * s);
+  } else {
+    const s = (t - 0.5) * 2;
+    r = Math.round(234 + (239 - 234) * s);
+    g = Math.round(179 + (68  - 179) * s);
+    b = Math.round(8   + (68  - 8)   * s);
+  }
+  return ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0').toUpperCase();
+}
+
 function exportScan(rows, filename, tab) {
   const showBind = tab === 'bind';
-  const data = rows.map(r => showBind ? ({
-    'Регион':               r.region || '',
-    'Подразделение':        r.subdiv || '',
-    'Магазин':              r.store  || '',
-    'ТЦ':                   r.tc     || '',
-    'Нет привязки приход, %': r.bindPct != null ? r.bindPct + '%' : '',
-    'Нет привязки приход, арт.': r.bindArt || '',
-  }) : ({
-    'Регион':               r.region || '',
-    'Подразделение':        r.subdiv || '',
-    'Магазин':              r.store  || '',
-    'ТЦ':                   r.tc     || '',
-    'Нет скан (без приходов), %': r.scanPct != null ? r.scanPct + '%' : '',
-    'Нет скан, артикулов':  r.scanArt || '',
-    'Нет скан, штук':       r.scanQty || '',
-  }));
-  const ws = XLSX.utils.json_to_sheet(data);
+  const pctField = showBind ? 'bindPct' : 'scanPct';
+
+  // Compute min/max for gradient normalization
+  const pctVals = rows.map(r => r[pctField]).filter(v => v != null);
+  const pctMin = pctVals.length ? Math.min(...pctVals) : 0;
+  const pctMax = pctVals.length ? Math.max(...pctVals) : 100;
+
+  const headers = showBind
+    ? ['Регион', 'Подразделение', 'Магазин', 'ТЦ', 'Нет привязки приход, %', 'Нет привязки приход, арт.']
+    : ['Регион', 'Подразделение', 'Магазин', 'ТЦ', 'Нет скан (без приходов), %', 'Нет скан, артикулов', 'Нет скан, штук'];
+
+  // Build worksheet as array of arrays (for cell-level control)
+  const aoa = [headers];
+  rows.forEach(r => {
+    if (showBind) {
+      aoa.push([r.region || '', r.subdiv || '', r.store || '', r.tc || '', r.bindPct ?? '', r.bindArt || '']);
+    } else {
+      aoa.push([r.region || '', r.subdiv || '', r.store || '', r.tc || '', r.scanPct ?? '', r.scanArt || '', r.scanQty || '']);
+    }
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // Index of the % column (0-based): col 4 in both cases
+  const pctColIdx = 4;
+
+  // Apply header style
+  headers.forEach((_, ci) => {
+    const addr = XLSX.utils.encode_cell({ r: 0, c: ci });
+    if (!ws[addr]) ws[addr] = { v: headers[ci], t: 's' };
+    ws[addr].s = {
+      font: { bold: true, color: { rgb: 'FFFFFFFF' } },
+      fill: { fgColor: { rgb: 'FF374151' } },
+      alignment: { horizontal: 'center', wrapText: true },
+    };
+  });
+
+  // Apply data row styles — color the % column
+  rows.forEach((r, ri) => {
+    const pct = r[pctField];
+    const rowIdx = ri + 1; // +1 for header row
+
+    // Style all cells in this row with light alternating background
+    const colCount = headers.length;
+    for (let ci = 0; ci < colCount; ci++) {
+      const addr = XLSX.utils.encode_cell({ r: rowIdx, c: ci });
+      if (!ws[addr]) ws[addr] = { v: '', t: 's' };
+      ws[addr].s = {
+        alignment: { horizontal: ci === pctColIdx ? 'center' : 'left' },
+        border: {
+          bottom: { style: 'thin', color: { rgb: 'FFE5E7EB' } },
+        },
+      };
+    }
+
+    // Color the % cell
+    if (pct != null) {
+      const addr = XLSX.utils.encode_cell({ r: rowIdx, c: pctColIdx });
+      const t = pctMax === pctMin ? 0.5 : (pct - pctMin) / (pctMax - pctMin);
+      const hex = gradientHex(t);
+      // Light background (mix with white ~25% opacity simulation)
+      const bgHex = gradientHex(t * 0.35); // lighter version for bg
+      ws[addr].s = {
+        fill: { fgColor: { rgb: 'FF' + hex } },
+        font: { bold: true, color: { rgb: 'FFFFFFFF' } },
+        alignment: { horizontal: 'center' },
+        border: { bottom: { style: 'thin', color: { rgb: 'FFE5E7EB' } } },
+      };
+      // Keep numeric value for proper % display
+      ws[addr].v = pct;
+      ws[addr].t = 'n';
+      ws[addr].z = '0.00"%"';
+    }
+  });
+
+  // Column widths
+  ws['!cols'] = showBind
+    ? [{ wch: 12 }, { wch: 20 }, { wch: 10 }, { wch: 30 }, { wch: 22 }, { wch: 22 }]
+    : [{ wch: 12 }, { wch: 20 }, { wch: 10 }, { wch: 30 }, { wch: 24 }, { wch: 18 }, { wch: 14 }];
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Сканирование');
   XLSX.writeFile(wb, filename);

@@ -98,11 +98,16 @@ function parseSheet(ws, sheetName) {
 
 function parsePct(val) {
   if (val === null || val === undefined || val === '') return null;
+  // Numeric cell: Excel stores percent as decimal (0.0144 → 1.44%)
   if (typeof val === 'number') return +(val * 100).toFixed(2);
-  const s = String(val).replace('%', '').replace(',', '.').trim();
+  const str = String(val);
+  const hasPercent = str.includes('%');
+  const s = str.replace('%', '').replace(',', '.').trim();
   const n = parseFloat(s);
   if (isNaN(n)) return null;
-  // Already in percent form (e.g. "80,78%")
+  // If the original string had a % sign, value is already in percent form
+  if (hasPercent) return +n.toFixed(2);
+  // No % sign: treat as decimal fraction if <= 1, else already percent
   if (n > 1.5 || n === 0) return +n.toFixed(2);
   return +(n * 100).toFixed(2);
 }
