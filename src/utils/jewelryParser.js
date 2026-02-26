@@ -23,7 +23,7 @@ function parseJewelryItogi(wb, fileName) {
     ? String(raw[0][0]).replace('Период отчета:', '').replace('Период отчета: ', '').trim()
     : '';
 
-  // Detect region from first data row (row 2)
+  // Detect region from first data row
   let fileRegion = 'ALL';
   for (let i = 2; i < raw.length; i++) {
     const r = raw[i];
@@ -39,40 +39,18 @@ function parseJewelryItogi(wb, fileName) {
   const subdivisions = [];
   const stores = [];
 
-  // Find section boundaries:
-  // Section 1 (subdivisions): starts at row 2, ends at empty row
-  // Section 2 (stores): starts after the second header row
-  let storeHeaderIdx = -1;
-  for (let i = 3; i < raw.length; i++) {
-    const r = raw[i];
-    if (r && r[0] === 'Регион' && r[2] === 'Магазин') {
-      storeHeaderIdx = i;
-      break;
-    }
-  }
+  // Detect format by checking row 1 header:
+  // New format (colleague): row 1 has "Магазин" at col 2 → only stores section, no subdivisions block
+  // Old format: row 1 has "Подразделение" at col 1 with no "Магазин" at col 2, stores appear after second header row
+  const headerRow1 = raw[1] || [];
+  const isNewFormat = headerRow1[2] === 'Магазин';
 
-  // Parse subdivisions: rows 2 .. storeHeaderIdx-2 (skip empty rows)
-  const subdivEnd = storeHeaderIdx > 0 ? storeHeaderIdx : raw.length;
-  for (let i = 2; i < subdivEnd; i++) {
-    const r = raw[i];
-    if (!r || r.every(v => v === null)) continue;
-    if (r[0] === 'Регион') continue;
-    if (!r[0] && !r[1]) continue;
-    subdivisions.push({
-      region:   String(r[0] || '').trim(),
-      subdiv:   String(r[1] || '').trim(),
-      artCount: toNum(r[2]),
-      pct:      parsePct(r[3]),
-      lastScan: parseExcelDate(r[4]),
-    });
-  }
-
-  // Parse stores: rows after storeHeaderIdx+1
-  if (storeHeaderIdx > 0) {
-    for (let i = storeHeaderIdx + 1; i < raw.length; i++) {
+  if (isNewFormat) {
+    // New format: row 0=period, row 1=headers, rows 2+=store data
+    // Cols: 0=Регион, 1=Подразделение, 2=Магазин, 3=Кол-во арт., 4=% невыставленного, 5=Дата
+    for (let i = 2; i < raw.length; i++) {
       const r = raw[i];
       if (!r || r.every(v => v === null)) continue;
-      if (r[0] === 'Регион') continue;
       if (!r[0] && !r[1]) continue;
       stores.push({
         region:   String(r[0] || '').trim(),
@@ -82,6 +60,68 @@ function parseJewelryItogi(wb, fileName) {
         pct:      parsePct(r[4]),
         lastScan: parseExcelDate(r[5]),
       });
+    }
+    // Build subdivisions by aggregating stores
+    const subdivMap = {};
+    for (const s of stores) {
+      const key = s.region + '||' + s.subdiv;
+      if (!subdivMap[key]) {
+        subdivMap[key] = { region: s.region, subdiv: s.subdiv, artCount: 0, pctSum: 0, count: 0, lastScan: s.lastScan };
+      }
+      subdivMap[key].artCount += s.artCount;
+      if (s.pct !== null) { subdivMap[key].pctSum += s.pct; subdivMap[key].count++; }
+    }
+    for (const key of Object.keys(subdivMap)) {
+      const sd = subdivMap[key];
+      subdivisions.push({
+        region:   sd.region,
+        subdiv:   sd.subdiv,
+        artCount: sd.artCount,
+        pct:      sd.count > 0 ? +(sd.pctSum / sd.count).toFixed(2) : null,
+        lastScan: sd.lastScan,
+      });
+    }
+  } else {
+    // Old format: subdivisions block first, then stores block after second "Регион" header row
+    let storeHeaderIdx = -1;
+    for (let i = 3; i < raw.length; i++) {
+      const r = raw[i];
+      if (r && r[0] === 'Регион' && r[2] === 'Магазин') {
+        storeHeaderIdx = i;
+        break;
+      }
+    }
+
+    const subdivEnd = storeHeaderIdx > 0 ? storeHeaderIdx : raw.length;
+    for (let i = 2; i < subdivEnd; i++) {
+      const r = raw[i];
+      if (!r || r.every(v => v === null)) continue;
+      if (r[0] === 'Регион') continue;
+      if (!r[0] && !r[1]) continue;
+      subdivisions.push({
+        region:   String(r[0] || '').trim(),
+        subdiv:   String(r[1] || '').trim(),
+        artCount: toNum(r[2]),
+        pct:      parsePct(r[3]),
+        lastScan: parseExcelDate(r[4]),
+      });
+    }
+
+    if (storeHeaderIdx > 0) {
+      for (let i = storeHeaderIdx + 1; i < raw.length; i++) {
+        const r = raw[i];
+        if (!r || r.every(v => v === null)) continue;
+        if (r[0] === 'Регион') continue;
+        if (!r[0] && !r[1]) continue;
+        stores.push({
+          region:   String(r[0] || '').trim(),
+          subdiv:   String(r[1] || '').trim(),
+          store:    String(r[2] || '').trim(),
+          artCount: toNum(r[3]),
+          pct:      parsePct(r[4]),
+          lastScan: parseExcelDate(r[5]),
+        });
+      }
     }
   }
 
