@@ -4,6 +4,7 @@ import { parseScanningFiles } from '../utils/scanningParser';
 import { parseJewelryFiles } from '../utils/jewelryParser';
 import { parseCapsuleFiles } from '../utils/capsuleParser';
 import { parsePricingFiles } from '../utils/pricingParser';
+import { parseFillingFiles } from '../utils/fillingParser';
 
 const DataContext = createContext(null);
 
@@ -16,6 +17,7 @@ export function DataProvider({ children }) {
   const [jewelryUnexposed, setJewelryUnexposed] = useState([]); // Невыставленный товар
   const [capsuleFiles, setCapsuleFiles] = useState([]);    // Капсулы
   const [pricingFiles, setPricingFiles] = useState([]);    // Цены на полупарах
+  const [fillingFiles, setFillingFiles] = useState([]);    // Наполненность обувь
 
   const loadFiles = useCallback(async (fileList) => {
     setLoading(true);
@@ -30,12 +32,14 @@ export function DataProvider({ children }) {
       };
       const isCapsule   = f => f.name.toLowerCase().includes('капсул');
       const isPricing   = f => f.name.toLowerCase().includes('полупарк') || f.name.toLowerCase().includes('переоценк');
-      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f) && !isPricing(f);
+      const isFilling   = f => f.name.toLowerCase().includes('наполненност');
+      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f) && !isPricing(f) && !isFilling(f);
 
       const scanList    = all.filter(isScanning);
       const jewelryList = all.filter(isJewelry);
       const capsuleList = all.filter(isCapsule);
       const pricingList = all.filter(isPricing);
+      const fillingList = all.filter(isFilling);
       const reportList  = all.filter(isReport);
 
       if (reportList.length > 0) {
@@ -58,6 +62,10 @@ export function DataProvider({ children }) {
       if (pricingList.length > 0) {
         const pricingResults = await parsePricingFiles(pricingList);
         if (pricingResults.length > 0) setPricingFiles(pricingResults);
+      }
+      if (fillingList.length > 0) {
+        const fillingResults = await parseFillingFiles(fillingList);
+        if (fillingResults.length > 0) setFillingFiles(fillingResults);
       }
     } catch (err) {
       setError(err.message || 'Ошибка при загрузке файлов');
@@ -145,6 +153,14 @@ export function DataProvider({ children }) {
   const spbPricing = pricingFiles.find(f => f.fileRegion === 'СПБ') || null;
   const belPricing = pricingFiles.find(f => f.fileRegion === 'БЕЛ') || null;
 
+  // Filling helpers
+  const spbFilling = fillingFiles.find(f => f.fileRegion === 'СПБ')
+    || fillingFiles.find(f => f.fileRegion === 'ALL')
+    || null;
+  const belFilling = fillingFiles.find(f => f.fileRegion === 'БЕЛ')
+    || fillingFiles.find(f => f.fileRegion === 'ALL')
+    || null;
+
   return (
     <DataContext.Provider value={{
       parsedFiles,
@@ -180,6 +196,9 @@ export function DataProvider({ children }) {
       pricingFiles,
       spbPricing,
       belPricing,
+      fillingFiles,
+      spbFilling,
+      belFilling,
     }}>
       {children}
     </DataContext.Provider>

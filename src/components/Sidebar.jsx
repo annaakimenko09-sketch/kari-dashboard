@@ -14,6 +14,7 @@ import {
   Gem,
   Boxes,
   Tag,
+  BarChart2,
 } from 'lucide-react';
 
 const BRAND = '#E91E8C';
@@ -44,6 +45,14 @@ const sections = [
       { path: '/kids',         label: 'Дашборд',          icon: LayoutDashboard },
       { path: '/kids/vyvoz',   label: 'Вывозы',           icon: Truck },
       { path: '/kids/control', label: 'Контроль',         icon: AlertCircle },
+    ],
+  },
+  {
+    label: 'Наполненность Обувь',
+    color: '#2563eb',
+    items: [
+      { path: '/filling/spb', label: 'СПБ', icon: BarChart2 },
+      { path: '/filling/bel', label: 'БЕЛ', icon: BarChart2 },
     ],
   },
   {
@@ -80,11 +89,11 @@ const sections = [
 ];
 
 // Which section labels to show as expandable groups (not standalone items)
-const GROUP_LABELS = ['Адресное ЮИ', 'Вывозы на МП Обувь', 'Вывозы на МП КИДС', 'Адресное Обувь', 'Цены на полупарах', 'Адресное Капсулы'];
+const GROUP_LABELS = ['Адресное ЮИ', 'Вывозы на МП Обувь', 'Вывозы на МП КИДС', 'Наполненность Обувь', 'Адресное Обувь', 'Цены на полупарах', 'Адресное Капсулы'];
 
 export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) {
   // Track expanded groups
-  const [expanded, setExpanded] = useState({ 'Адресное ЮИ': true, 'Вывозы на МП Обувь': true, 'Вывозы на МП КИДС': true, 'Адресное Обувь': true, 'Цены на полупарах': true, 'Адресное Капсулы': true });
+  const [expanded, setExpanded] = useState({ 'Адресное ЮИ': true, 'Вывозы на МП Обувь': true, 'Вывозы на МП КИДС': true, 'Наполненность Обувь': true, 'Адресное Обувь': true, 'Цены на полупарах': true, 'Адресное Капсулы': true });
 
   function toggleGroup(label) {
     setExpanded(prev => ({ ...prev, [label]: !prev[label] }));
