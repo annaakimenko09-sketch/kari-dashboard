@@ -18,7 +18,7 @@ const BRAND = '#E91E8C';
 
 const sections = [
   {
-    label: 'ЮИ',
+    label: 'Адресное ЮИ',
     color: '#f59e0b',
     items: [
       { path: '/jewelry/spb', label: 'СПБ', icon: Gem },
@@ -26,7 +26,7 @@ const sections = [
     ],
   },
   {
-    label: 'Обувь',
+    label: 'Вывозы на МП Обувь',
     color: '#E91E8C',
     items: [
       { path: '/obuv',         label: 'Дашборд',          icon: LayoutDashboard },
@@ -35,7 +35,7 @@ const sections = [
     ],
   },
   {
-    label: 'Кидс',
+    label: 'Вывозы на МП КИДС',
     color: '#8b5cf6',
     items: [
       { path: '/kids',         label: 'Дашборд',          icon: LayoutDashboard },
@@ -51,7 +51,7 @@ const sections = [
     ],
   },
   {
-    label: 'Приёмка',
+    label: 'Адресное Обувь',
     color: '#10b981',
     items: [
       { path: '/acceptance/spb', label: 'СПБ', icon: ClipboardCheck },
@@ -68,11 +68,11 @@ const sections = [
 ];
 
 // Which section labels to show as expandable groups (not standalone items)
-const GROUP_LABELS = ['ЮИ', 'Обувь', 'Кидс', 'Приёмка'];
+const GROUP_LABELS = ['Адресное ЮИ', 'Вывозы на МП Обувь', 'Вывозы на МП КИДС', 'Адресное Обувь'];
 
 export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) {
   // Track expanded groups
-  const [expanded, setExpanded] = useState({ 'ЮИ': true, 'Обувь': true, 'Кидс': true, 'Приёмка': true });
+  const [expanded, setExpanded] = useState({ 'Адресное ЮИ': true, 'Вывозы на МП Обувь': true, 'Вывозы на МП КИДС': true, 'Адресное Обувь': true });
 
   function toggleGroup(label) {
     setExpanded(prev => ({ ...prev, [label]: !prev[label] }));
