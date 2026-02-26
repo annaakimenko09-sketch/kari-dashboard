@@ -46,15 +46,15 @@ function DataTable({ rows, columns, sortField, sortDir, onToggleSort, colorScale
         <thead>
           <tr className="border-b border-gray-100">
             {labelCols.map(lc => (
-              <th key={lc.key} className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+              <th key={lc.key} className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                 {lc.label}
               </th>
             ))}
             {columns.map(col => (
               <th
                 key={col.key}
-                className="text-right px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-800"
-                style={{ maxWidth: 110, whiteSpace: 'normal', lineHeight: '1.2', wordBreak: 'break-word' }}
+                className="text-center px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-800"
+                style={{ width: 100, whiteSpace: 'normal', lineHeight: '1.2', wordBreak: 'break-word' }}
                 onClick={() => onToggleSort(col.key)}
               >
                 {col.label} <SortIcon field={col.key} sortField={sortField} sortDir={sortDir} />
@@ -66,16 +66,16 @@ function DataTable({ rows, columns, sortField, sortDir, onToggleSort, colorScale
           {rows.map((r, i) => (
             <tr key={i} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
               {labelCols.map(lc => (
-                <td key={lc.key} className="px-3 py-2 text-gray-700 text-xs whitespace-nowrap font-medium">
+                <td key={lc.key} className="px-3 py-2 text-center text-gray-700 text-xs whitespace-nowrap font-medium">
                   {r[lc.key] || '—'}
                 </td>
               ))}
               {columns.map(col => {
                 const scale = colorScales[col.key] || { min: 0, max: 100 };
                 return (
-                  <td key={col.key} className="px-2 py-2 text-right">
+                  <td key={col.key} className="px-2 py-2 text-center">
                     <span
-                      className="px-1.5 py-0.5 rounded text-xs font-medium"
+                      className="inline-block px-1.5 py-0.5 rounded text-xs font-medium"
                       style={pctColor(r[col.key], scale.min, scale.max, col.key)}
                     >
                       {fmtPct(r[col.key])}
