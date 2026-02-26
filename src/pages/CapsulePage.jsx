@@ -51,9 +51,13 @@ export default function CapsulePage({ region }) {
 
   const subdivRows = useMemo(() => {
     if (!data) return [];
-    if (!regionFilter) return data.subdivisions;
-    return data.subdivisions.filter(r => r.region === regionFilter);
-  }, [data, regionFilter]);
+    // Filter subdivisions to only the current page's region
+    let rows = data.subdivisions.filter(r =>
+      r.region && r.region.toUpperCase().includes(region.toUpperCase())
+    );
+    if (regionFilter) rows = rows.filter(r => r.region === regionFilter);
+    return rows;
+  }, [data, regionFilter, region]);
 
   // ── Магазины — region-specific ────────────────────────────────
   const storeRows = useMemo(() => {
@@ -78,9 +82,9 @@ export default function CapsulePage({ region }) {
   }, [storeRows]);
 
   const regionOptions = useMemo(() => {
-    const set = new Set(data?.subdivisions.map(r => r.region).filter(Boolean) || []);
+    const set = new Set(subdivRows.map(r => r.region).filter(Boolean));
     return Array.from(set).sort();
-  }, [data]);
+  }, [subdivRows]);
 
   // ── Color scales ─────────────────────────────────────────────
   const subdivPcts = subdivRows.map(r => r.pct).filter(v => v !== null);
@@ -215,7 +219,7 @@ export default function CapsulePage({ region }) {
           )}
 
           {/* Subdivisions block */}
-          {data.subdivisions.length > 0 && (
+          {subdivRows.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 gap-3 flex-wrap">
                 <h2 className="text-sm font-semibold text-gray-700">
@@ -265,7 +269,7 @@ export default function CapsulePage({ region }) {
             </div>
           )}
 
-          {regionRows.length === 0 && data.subdivisions.length === 0 && (
+          {regionRows.length === 0 && subdivRows.length === 0 && (
             <p className="text-gray-400 text-sm text-center py-8">Нет данных в файле</p>
           )}
         </div>
