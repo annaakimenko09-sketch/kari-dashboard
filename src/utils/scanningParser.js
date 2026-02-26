@@ -118,6 +118,58 @@ function toNum(val) {
   return isNaN(n) ? 0 : n;
 }
 
+/**
+ * Parse a "new format" scanning sheet (Магазины / Подразделение from colleague files).
+ * Structure: rows 0-6 = headers/meta, row 7 = technical column names, row 8+ = data.
+ * Columns: 0=Region, 1=Department, 2=Магазин ID, 3=ТЦ, 4=scanPct%, 5=scanArt, 6=scanQty, 7=bindPct%, 8=bindArt
+ */
+function parseSheetNewFormat(ws, sheetName) {
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+  // Period from row 2 col 0
+  const periodRow = raw[2] || [];
+  const period = periodRow[0] ? String(periodRow[0]).replace('Период отчета: ', '').trim() : '';
+
+  const data = [];
+  for (let i = 8; i < raw.length; i++) {
+    const row = raw[i];
+    if (!row || row.every(v => v === null)) continue;
+    const region = row[0] ? String(row[0]).trim() : null;
+    if (!region || region === 'Region' || region === 'Регион') continue;
+
+    const storeRaw = row[2] ? String(row[2]).trim() : null;
+
+    data.push({
+      region,
+      subdiv:     row[1] ? String(row[1]).trim() : null,
+      store:      storeRaw,
+      tc:         row[3] ? String(row[3]).trim() : null,
+      scanPct:    parsePct(row[4]),
+      scanArt:    toNum(row[5]),
+      scanQty:    toNum(row[6]),
+      bindPct:    parsePct(row[7]),
+      bindArt:    toNum(row[8]),
+      seasons:    [],
+      categories: [],
+      _sheet:     sheetName,
+    });
+  }
+
+  return { period, data };
+}
+
+function detectRegionFromSheet(ws) {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  const firstDataRow = rows[8];
+  if (firstDataRow && firstDataRow[0]) {
+    const r = String(firstDataRow[0]).trim().toUpperCase();
+    if (r.includes('СПБ') || r.includes('SPB')) return 'СПБ';
+    if (r.includes('БЕЛ') || r.includes('BEL')) return 'БЕЛ';
+    return r;
+  }
+  return null;
+}
+
 export async function parseScanningFiles(fileList) {
   const results = [];
 
@@ -126,29 +178,47 @@ export async function parseScanningFiles(fileList) {
       const buffer = await file.arrayBuffer();
       const wb = XLSX.read(buffer, { type: 'array', cellDates: false });
 
-      // Detect which region this file covers by checking Подразделения sheet
+      // Determine format: old (Регионы/Подразделения/Магазины) or new (Магазины/Подразделение/Коробки)
+      const isNewFormat = !wb.SheetNames.includes('Подразделения') && wb.SheetNames.includes('Подразделение');
+
       let fileRegion = 'ALL';
-      if (wb.SheetNames.includes('Подразделения')) {
-        const ws = wb.Sheets['Подразделения'];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
-        // First data row is row index 8
-        const firstDataRow = rows[8];
-        if (firstDataRow && firstDataRow[0]) {
-          const r = String(firstDataRow[0]).trim().toUpperCase();
-          if (r.includes('СПБ') || r.includes('SPB')) fileRegion = 'СПБ';
-          else if (r.includes('БЕЛ') || r.includes('BEL')) fileRegion = 'БЕЛ';
-          else fileRegion = r;
-        }
-      }
-
+      let period = '';
       const sheetData = {};
-      for (const sn of ['Регионы', 'Подразделения', 'Магазины']) {
-        if (wb.SheetNames.includes(sn)) {
-          sheetData[sn] = parseSheet(wb.Sheets[sn], sn);
-        }
-      }
 
-      const period = sheetData['Регионы']?.period || sheetData['Подразделения']?.period || '';
+      if (isNewFormat) {
+        // New format: colleague files with sheets Магазины, Подразделение, Коробки
+        // Detect region from Подразделение or Магазины sheet
+        const regionSheet = wb.Sheets['Подразделение'] || wb.Sheets['Магазины'];
+        if (regionSheet) {
+          const detected = detectRegionFromSheet(regionSheet);
+          if (detected) fileRegion = detected;
+        }
+
+        if (wb.SheetNames.includes('Подразделение')) {
+          const parsed = parseSheetNewFormat(wb.Sheets['Подразделение'], 'Подразделение');
+          sheetData['Подразделения'] = parsed;
+          if (!period) period = parsed.period;
+        }
+        if (wb.SheetNames.includes('Магазины')) {
+          const parsed = parseSheetNewFormat(wb.Sheets['Магазины'], 'Магазины');
+          sheetData['Магазины'] = parsed;
+          if (!period) period = parsed.period;
+        }
+      } else {
+        // Old format: Регионы / Подразделения / Магазины
+        if (wb.SheetNames.includes('Подразделения')) {
+          const detected = detectRegionFromSheet(wb.Sheets['Подразделения']);
+          if (detected) fileRegion = detected;
+        }
+
+        for (const sn of ['Регионы', 'Подразделения', 'Магазины']) {
+          if (wb.SheetNames.includes(sn)) {
+            sheetData[sn] = parseSheet(wb.Sheets[sn], sn);
+          }
+        }
+
+        period = sheetData['Регионы']?.period || sheetData['Подразделения']?.period || '';
+      }
 
       results.push({
         fileName: file.name,
