@@ -137,24 +137,17 @@ function parseTransit(ws) {
   const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
   const stores = [];
 
-  // Row 0=headers, row 1=grand total, row 2=region total, rows 3+=stores (0-indexed)
-  // Debug: log first few rows to check store column
-  for (let dbgR = 0; dbgR <= Math.min(5, range.e.r); dbgR++) {
-    const vals = [];
-    for (let c = 0; c <= Math.min(12, range.e.c); c++) {
-      const cell = ws[XLSX.utils.encode_cell({ r: dbgR, c })];
-      vals.push(cell ? cell.v : null);
-    }
-    console.log(`[parseTransit] row ${dbgR}:`, vals);
-  }
-
+  // Row 0=season headers (merged), row 1=col headers, row 2=region total, rows 3+=stores (0-indexed)
+  // Магазин: col J=9 (not I=8)
+  // Seasons start cols: K=10, Q=16, W=22, ]=28, c=34, i=40, o=46, u=52 (each 6 sub-cols)
+  // Total block: col 58=Отгружено, 59=Создано, 63=Всего в пути
   for (let r = 3; r <= range.e.r; r++) {
     const get = c => {
       const cell = ws[XLSX.utils.encode_cell({ r, c })];
       return cell ? cell.v : null;
     };
 
-    const store = get(8); // I (Магазин — store number)
+    const store = get(9); // J — Магазин (store number)
     if (!store) continue;
 
     const seasons = {};
@@ -192,9 +185,6 @@ function parseFillingFile(wb, fileName) {
   const transitStores = wsT ? parseTransit(wsT) : [];
 
   // Merge transit data into filling by store key
-  console.log('[parseFillingFile] fillingStores count:', fillingStores.length, '| transitStores count:', transitStores.length);
-  if (fillingStores.length > 0) console.log('[parseFillingFile] sample filling store key:', fillingStores[0]?.store);
-  if (transitStores.length > 0) console.log('[parseFillingFile] sample transit store key:', transitStores[0]?.store);
   const transitMap = {};
   for (const t of transitStores) {
     transitMap[String(t.store)] = t;
