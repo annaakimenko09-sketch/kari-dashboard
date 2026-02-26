@@ -15,6 +15,8 @@ import ScanningSpbPage    from './pages/ScanningSpbPage';
 import ScanningBelPage    from './pages/ScanningBelPage';
 import JewelrySpbPage    from './pages/JewelrySpbPage';
 import JewelryBelPage    from './pages/JewelryBelPage';
+import CapsuleSpbPage    from './pages/CapsuleSpbPage';
+import CapsuleBelPage    from './pages/CapsuleBelPage';
 import UploadPage         from './pages/UploadPage';
 
 export default function App() {
@@ -49,6 +51,10 @@ export default function App() {
                 {/* ЮИ */}
                 <Route path="jewelry/spb" element={<ErrorBoundary><JewelrySpbPage /></ErrorBoundary>} />
                 <Route path="jewelry/bel" element={<ErrorBoundary><JewelryBelPage /></ErrorBoundary>} />
+
+                {/* Капсулы */}
+                <Route path="capsule/spb" element={<ErrorBoundary><CapsuleSpbPage /></ErrorBoundary>} />
+                <Route path="capsule/bel" element={<ErrorBoundary><CapsuleBelPage /></ErrorBoundary>} />
 
                 {/* Загрузка */}
                 <Route path="upload"       element={<ErrorBoundary><UploadPage /></ErrorBoundary>} />

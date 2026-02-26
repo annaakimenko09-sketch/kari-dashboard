@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback } from 'react';
 import { parseExcelFiles, mergeSummaryData, mergeDetailData, mergeRegionTotals } from '../utils/excelParser';
 import { parseScanningFiles } from '../utils/scanningParser';
 import { parseJewelryFiles } from '../utils/jewelryParser';
+import { parseCapsuleFiles } from '../utils/capsuleParser';
 
 const DataContext = createContext(null);
 
@@ -12,6 +13,7 @@ export function DataProvider({ children }) {
   const [scanningFiles, setScanningFiles] = useState([]);
   const [jewelryItogi, setJewelryItogi] = useState([]);     // ЮИ Итоги (СПБ и БЕЛ)
   const [jewelryUnexposed, setJewelryUnexposed] = useState([]); // Невыставленный товар
+  const [capsuleFiles, setCapsuleFiles] = useState([]);    // Капсулы
 
   const loadFiles = useCallback(async (fileList) => {
     setLoading(true);
@@ -24,10 +26,12 @@ export function DataProvider({ children }) {
         const n = f.name.toLowerCase();
         return n.includes('юи') || n.includes('ювелир') || n.includes('невыставленн');
       };
-      const isReport    = f => !isScanning(f) && !isJewelry(f);
+      const isCapsule   = f => f.name.toLowerCase().includes('капсул');
+      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f);
 
       const scanList    = all.filter(isScanning);
       const jewelryList = all.filter(isJewelry);
+      const capsuleList = all.filter(isCapsule);
       const reportList  = all.filter(isReport);
 
       if (reportList.length > 0) {
@@ -42,6 +46,10 @@ export function DataProvider({ children }) {
         const { itogiResults, unexposedResults } = await parseJewelryFiles(jewelryList);
         if (itogiResults.length > 0) setJewelryItogi(itogiResults);
         if (unexposedResults.length > 0) setJewelryUnexposed(unexposedResults);
+      }
+      if (capsuleList.length > 0) {
+        const capsuleResults = await parseCapsuleFiles(capsuleList);
+        if (capsuleResults.length > 0) setCapsuleFiles(capsuleResults);
       }
     } catch (err) {
       setError(err.message || 'Ошибка при загрузке файлов');
@@ -117,6 +125,14 @@ export function DataProvider({ children }) {
   // Невыставленный товар — обычно один файл, берём последний
   const jewelryUnexposedFile = jewelryUnexposed[jewelryUnexposed.length - 1] || null;
 
+  // Capsule helpers — find by region or fall back to ALL file
+  const spbCapsule = capsuleFiles.find(f => f.fileRegion === 'СПБ')
+    || capsuleFiles.find(f => f.fileRegion === 'ALL')
+    || null;
+  const belCapsule = capsuleFiles.find(f => f.fileRegion === 'БЕЛ')
+    || capsuleFiles.find(f => f.fileRegion === 'ALL')
+    || null;
+
   return (
     <DataContext.Provider value={{
       parsedFiles,
@@ -146,6 +162,9 @@ export function DataProvider({ children }) {
       spbJewelryItogi,
       belJewelryItogi,
       jewelryUnexposedFile,
+      capsuleFiles,
+      spbCapsule,
+      belCapsule,
     }}>
       {children}
     </DataContext.Provider>

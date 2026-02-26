@@ -12,6 +12,7 @@ import {
   ChevronDown,
   X,
   Gem,
+  Boxes,
 } from 'lucide-react';
 
 const BRAND = '#E91E8C';
@@ -32,6 +33,7 @@ const sections = [
       { path: '/obuv',         label: 'Дашборд',          icon: LayoutDashboard },
       { path: '/obuv/vyvoz',   label: 'Вывозы',           icon: Truck },
       { path: '/obuv/control', label: 'Контроль',         icon: AlertCircle },
+      { path: '/orders',       label: 'Контроль заказов', icon: Clock },
     ],
   },
   {
@@ -44,18 +46,19 @@ const sections = [
     ],
   },
   {
-    label: 'standalone-orders',
-    color: '#6b7280',
-    items: [
-      { path: '/orders', label: 'Контроль заказов', icon: Clock },
-    ],
-  },
-  {
     label: 'Адресное Обувь',
     color: '#10b981',
     items: [
       { path: '/acceptance/spb', label: 'СПБ', icon: ClipboardCheck },
       { path: '/acceptance/bel', label: 'БЕЛ', icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: 'Адресное Капсулы',
+    color: '#06b6d4',
+    items: [
+      { path: '/capsule/spb', label: 'СПБ', icon: Boxes },
+      { path: '/capsule/bel', label: 'БЕЛ', icon: Boxes },
     ],
   },
   {
@@ -68,11 +71,11 @@ const sections = [
 ];
 
 // Which section labels to show as expandable groups (not standalone items)
-const GROUP_LABELS = ['Адресное ЮИ', 'Вывозы на МП Обувь', 'Вывозы на МП КИДС', 'Адресное Обувь'];
+const GROUP_LABELS = ['Адресное ЮИ', 'Вывозы на МП Обувь', 'Вывозы на МП КИДС', 'Адресное Обувь', 'Адресное Капсулы'];
 
 export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) {
   // Track expanded groups
-  const [expanded, setExpanded] = useState({ 'Адресное ЮИ': true, 'Вывозы на МП Обувь': true, 'Вывозы на МП КИДС': true, 'Адресное Обувь': true });
+  const [expanded, setExpanded] = useState({ 'Адресное ЮИ': true, 'Вывозы на МП Обувь': true, 'Вывозы на МП КИДС': true, 'Адресное Обувь': true, 'Адресное Капсулы': true });
 
   function toggleGroup(label) {
     setExpanded(prev => ({ ...prev, [label]: !prev[label] }));
