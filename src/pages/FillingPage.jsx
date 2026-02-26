@@ -190,42 +190,21 @@ export default function FillingPage({ region }) {
     if (!data || filteredSorted.length === 0) return;
     const wb = XLSX.utils.book_new();
 
-    const toHex = v => v.toString(16).padStart(2, '0').toUpperCase();
-    function gradientColor(val, min, max) {
-      if (val === null || val === undefined || max === min) return { bg: 'FFFFFF', fg: '374151' };
-      const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
-      let r, g, b;
-      if (ratio <= 0.5) {
-        const t = ratio / 0.5;
-        r = Math.round(22  + t * (202 - 22));
-        g = Math.round(163 + t * (138 - 163));
-        b = Math.round(74  + t * (4   - 74));
-      } else {
-        const t = (ratio - 0.5) / 0.5;
-        r = Math.round(202 + t * (220 - 202));
-        g = Math.round(138 + t * (38  - 138));
-        b = Math.round(4   + t * (38  - 4));
-      }
-      const bgR = Math.round(r + (255 - r) * 0.30);
-      const bgG = Math.round(g + (255 - g) * 0.30);
-      const bgB = Math.round(b + (255 - b) * 0.30);
-      return { bg: toHex(bgR) + toHex(bgG) + toHex(bgB), fg: '000000' };
-    }
-
     const headerStyle = {
       font: { bold: true, color: { rgb: '374151' } },
       fill: { fgColor: { rgb: 'F3F4F6' } },
       alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
       border: { bottom: { style: 'thin', color: { rgb: 'D1D5DB' } } },
     };
+    const cellStyle = { font: { color: { rgb: '374151' } }, alignment: { horizontal: 'center', vertical: 'center' } };
 
     // Sheet 1: Магазины (main metrics)
     {
       const headers = ['Подразделение', 'Магазин', 'Наименование', 'Категория', '% напол. MAX', 'План MAX, пар', 'План, пар', 'Последних пар'];
-      const metricCols = ['fillPctMax', 'planPairsMax', 'planPairsN', 'lastPairs'];
       const rows = filteredSorted.map(s => [
         s.subdiv, s.store, s.name, s.cat,
-        s.fillPctMax, s.planPairsMax, s.planPairsN, s.lastPairs,
+        s.fillPctMax !== null ? s.fillPctMax.toFixed(1) + '%' : '',
+        s.planPairsMax, s.planPairsN, s.lastPairs,
       ]);
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
 
@@ -234,32 +213,11 @@ export default function FillingPage({ region }) {
         if (ws[addr]) ws[addr].s = headerStyle;
       });
 
-      const exportScales = {};
-      for (const col of metricCols) {
-        const vals = filteredSorted.map(s => s[col]).filter(v => v !== null && v !== undefined);
-        exportScales[col] = { min: Math.min(...vals), max: Math.max(...vals) };
-      }
-
-      rows.forEach((row, ri) => {
-        // Label cols
-        [0, 1, 2, 3].forEach(ci => {
+      rows.forEach((_, ri) => {
+        for (let ci = 0; ci < headers.length; ci++) {
           const addr = XLSX.utils.encode_cell({ r: ri + 1, c: ci });
-          if (ws[addr]) ws[addr].s = { font: { color: { rgb: '374151' } }, alignment: { horizontal: 'center', vertical: 'center' } };
-        });
-        // Metric cols with gradient
-        metricCols.forEach((col, mi) => {
-          const addr = XLSX.utils.encode_cell({ r: ri + 1, c: 4 + mi });
-          const val = filteredSorted[ri][col];
-          const sc = exportScales[col];
-          const { bg, fg } = gradientColor(val, sc.min, sc.max);
-          if (ws[addr]) {
-            ws[addr].s = {
-              fill: { fgColor: { rgb: bg } },
-              font: { color: { rgb: fg } },
-              alignment: { horizontal: 'center', vertical: 'center' },
-            };
-          }
-        });
+          if (ws[addr]) ws[addr].s = cellStyle;
+        }
       });
 
       ws['!cols'] = [{ wch: 16 }, { wch: 10 }, { wch: 28 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
