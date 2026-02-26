@@ -122,6 +122,7 @@ function toNum(val) {
  * Parse a "new format" scanning sheet (Магазины / Подразделение from colleague files).
  * Structure: rows 0-6 = headers/meta, row 7 = technical column names, row 8+ = data.
  * Columns: 0=Region, 1=Department, 2=Магазин ID, 3=ТЦ, 4=scanPct%, 5=scanArt, 6=scanQty, 7=bindPct%, 8=bindArt
+ * Season/category columns have same layout as old format: cols 10-41 seasons, cols 42+ categories
  */
 function parseSheetNewFormat(ws, sheetName) {
   const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
@@ -130,6 +131,34 @@ function parseSheetNewFormat(ws, sheetName) {
   const periodRow = raw[2] || [];
   const period = periodRow[0] ? String(periodRow[0]).replace('Период отчета: ', '').trim() : '';
 
+  // Header rows (same structure as old format)
+  const seasonRow  = raw[2] || [];  // season name
+  const dirRow     = raw[3] || [];  // direction/gender
+  const catNameRow = raw[4] || [];  // category name
+
+  const maxCols = (raw[8] || raw[4] || []).length;
+
+  // Season cols: indices 10..41
+  const seasonCols = [];
+  for (let c = 10; c <= 41 && c < maxCols; c++) {
+    const s = seasonRow[c] ? String(seasonRow[c]).replace('/', '').trim() : null;
+    const d = dirRow[c]    ? String(dirRow[c]).trim() : null;
+    if (s && d && s !== '-' && d !== '-' && s !== '0' && d !== '0') {
+      seasonCols.push({ colIdx: c, season: s, direction: d });
+    }
+  }
+
+  // Category cols: indices 42+
+  const catCols = [];
+  for (let c = 42; c < maxCols; c++) {
+    const catName   = catNameRow[c] ? String(catNameRow[c]).trim() : null;
+    const direction = dirRow[c]     ? String(dirRow[c]).trim() : null;
+    const season    = seasonRow[c]  ? String(seasonRow[c]).replace('/', '').trim() : null;
+    if (catName && catName !== '-' && catName !== '0') {
+      catCols.push({ colIdx: c, category: catName, direction: direction || '', season: season || '' });
+    }
+  }
+
   const data = [];
   for (let i = 8; i < raw.length; i++) {
     const row = raw[i];
@@ -137,12 +166,10 @@ function parseSheetNewFormat(ws, sheetName) {
     const region = row[0] ? String(row[0]).trim() : null;
     if (!region || region === 'Region' || region === 'Регион') continue;
 
-    const storeRaw = row[2] ? String(row[2]).trim() : null;
-
-    data.push({
+    const obj = {
       region,
       subdiv:     row[1] ? String(row[1]).trim() : null,
-      store:      storeRaw,
+      store:      row[2] ? String(row[2]).trim() : null,
       tc:         row[3] ? String(row[3]).trim() : null,
       scanPct:    parsePct(row[4]),
       scanArt:    toNum(row[5]),
@@ -152,7 +179,23 @@ function parseSheetNewFormat(ws, sheetName) {
       seasons:    [],
       categories: [],
       _sheet:     sheetName,
-    });
+    };
+
+    for (const sc of seasonCols) {
+      const val = parsePct(raw[i][sc.colIdx]);
+      if (val !== null) {
+        obj.seasons.push({ season: sc.season, direction: sc.direction, value: val });
+      }
+    }
+
+    for (const cc of catCols) {
+      const val = parsePct(raw[i][cc.colIdx]);
+      if (val !== null) {
+        obj.categories.push({ season: cc.season, direction: cc.direction, category: cc.category, value: val });
+      }
+    }
+
+    data.push(obj);
   }
 
   return { period, data };
