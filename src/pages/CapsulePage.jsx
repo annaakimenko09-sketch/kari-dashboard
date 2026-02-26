@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import { Download } from 'lucide-react';
 
 function pctColor(val, min, max) {
@@ -101,27 +101,130 @@ export default function CapsulePage({ region }) {
     else { setSortField(field); setSortDir('desc'); }
   }
 
+  // ── Export helpers ────────────────────────────────────────────
+  function capsuleGradient(val, min, max) {
+    if (val === null || val === undefined) return { bg: 'FFFFFF', fg: '000000' };
+    if (max === min) return { bg: 'FEF9C3', fg: '000000' };
+    const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
+    // 0=green(best/low%), 1=red(worst/high%)
+    let r, g, b;
+    if (ratio <= 0.5) {
+      const t = ratio / 0.5;
+      r = Math.round(22  + t * (202 - 22));
+      g = Math.round(163 + t * (138 - 163));
+      b = Math.round(74  + t * (4   - 74));
+    } else {
+      const t = (ratio - 0.5) / 0.5;
+      r = Math.round(202 + t * (220 - 202));
+      g = Math.round(138 + t * (38  - 138));
+      b = Math.round(4   + t * (38  - 4));
+    }
+    const bgR = Math.round(r + (255 - r) * 0.30);
+    const bgG = Math.round(g + (255 - g) * 0.30);
+    const bgB = Math.round(b + (255 - b) * 0.30);
+    const toHex = v => v.toString(16).padStart(2, '0').toUpperCase();
+    return { bg: toHex(bgR) + toHex(bgG) + toHex(bgB), fg: '000000' };
+  }
+
+  function styleHeader(ws, headers) {
+    headers.forEach((_, ci) => {
+      const addr = XLSX.utils.encode_cell({ r: 0, c: ci });
+      if (ws[addr]) {
+        ws[addr].s = {
+          font: { bold: true, color: { rgb: '374151' } },
+          fill: { fgColor: { rgb: 'F3F4F6' } },
+          alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+          border: { bottom: { style: 'thin', color: { rgb: 'D1D5DB' } } },
+        };
+      }
+    });
+    ws['!rows'] = [{ hpt: 36 }];
+  }
+
+  function applyPctStyle(ws, ri, ci, val, min, max) {
+    const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
+    if (!ws[addr]) return;
+    const { bg, fg } = capsuleGradient(val, min, max);
+    ws[addr].s = {
+      fill: { fgColor: { rgb: bg } },
+      font: { color: { rgb: fg }, bold: false },
+      alignment: { horizontal: 'center', vertical: 'center' },
+    };
+    if (typeof ws[addr].v === 'number') {
+      ws[addr].v = ws[addr].v / 100;
+      ws[addr].t = 'n';
+      ws[addr].z = '0.0%';
+    }
+  }
+
+  function applyTextStyle(ws, ri, ci) {
+    const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
+    if (ws[addr]) {
+      ws[addr].s = { font: { color: { rgb: '374151' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+    }
+  }
+
   // ── Export ────────────────────────────────────────────────────
   function exportItogi() {
     const wb = XLSX.utils.book_new();
-    const rows = [
-      ['Регион', '% Неотсканировано', '% Неотсканировано пред.неделя', 'Не отскан. арт.', 'Физдоступно арт.'],
-      ...regionRows.map(r => [r.region, r.pct, r.pctPrev, r.notScanned, r.available]),
-      [],
-      ['Регион', 'Подразделение', '% Неотсканировано', '% Неотсканировано пред.неделя', 'Не отскан. арт.', 'Физдоступно арт.'],
-      ...subdivRows.map(r => [r.region, r.subdiv, r.pct, r.pctPrev, r.notScanned, r.available]),
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Итоги');
+
+    // Sheet 1: Регионы
+    const regHeader = ['Регион', '% Неотсканировано', '% пред. неделя', 'Не отскан. арт.', 'Физдоступно арт.'];
+    const regData = regionRows.map(r => [r.region, r.pct, r.pctPrev, r.notScanned, r.available]);
+    const wsReg = XLSX.utils.aoa_to_sheet([regHeader, ...regData]);
+    styleHeader(wsReg, regHeader);
+    const regPcts = regionRows.map(r => r.pct).filter(v => v != null);
+    const regPrevPcts = regionRows.map(r => r.pctPrev).filter(v => v != null);
+    const regMin = Math.min(...regPcts), regMax = Math.max(...regPcts);
+    const regPrevMin = Math.min(...regPrevPcts), regPrevMax = Math.max(...regPrevPcts);
+    regData.forEach((row, ri) => {
+      applyTextStyle(wsReg, ri + 1, 0);
+      applyPctStyle(wsReg, ri + 1, 1, regionRows[ri].pct, regMin, regMax);
+      applyPctStyle(wsReg, ri + 1, 2, regionRows[ri].pctPrev, regPrevMin, regPrevMax);
+    });
+    wsReg['!cols'] = [{ wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, wsReg, 'Регионы');
+
+    // Sheet 2: Подразделения
+    const subHeader = ['Регион', 'Подразделение', '% Неотсканировано', '% пред. неделя', 'Не отскан. арт.', 'Физдоступно арт.'];
+    const subData = subdivRows.map(r => [r.region, r.subdiv, r.pct, r.pctPrev, r.notScanned, r.available]);
+    const wsSub = XLSX.utils.aoa_to_sheet([subHeader, ...subData]);
+    styleHeader(wsSub, subHeader);
+    const subPcts = subdivRows.map(r => r.pct).filter(v => v != null);
+    const subPrevPcts = subdivRows.map(r => r.pctPrev).filter(v => v != null);
+    const subMin = Math.min(...subPcts), subMax = Math.max(...subPcts);
+    const subPrevMin = Math.min(...subPrevPcts), subPrevMax = Math.max(...subPrevPcts);
+    subData.forEach((row, ri) => {
+      applyTextStyle(wsSub, ri + 1, 0);
+      applyTextStyle(wsSub, ri + 1, 1);
+      applyPctStyle(wsSub, ri + 1, 2, subdivRows[ri].pct, subMin, subMax);
+      applyPctStyle(wsSub, ri + 1, 3, subdivRows[ri].pctPrev, subPrevMin, subPrevMax);
+    });
+    wsSub['!cols'] = [{ wch: 10 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, wsSub, 'Подразделения');
+
     XLSX.writeFile(wb, `Капсулы_Итоги_${region}.xlsx`);
   }
 
   function exportStores() {
     const wb = XLSX.utils.book_new();
-    const rows = [
-      ['Подразделение', 'Магазин', 'ТЦ', '% Неотсканировано', '% Неотсканировано пред.неделя', 'Не отскан. арт.', 'Физдоступно арт.'],
-      ...filteredStores.map(r => [r.subdiv, r.store, r.tc, r.pct, r.pctPrev, r.notScanned, r.available]),
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Магазины');
+    const header = ['Подразделение', 'Магазин', 'ТЦ', '% Неотсканировано', '% пред. неделя', 'Не отскан. арт.', 'Физдоступно арт.'];
+    const dataRows = filteredStores.map(r => [r.subdiv, r.store, r.tc, r.pct, r.pctPrev, r.notScanned, r.available]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
+    styleHeader(ws, header);
+    const pcts = filteredStores.map(r => r.pct).filter(v => v != null);
+    const prevPcts = filteredStores.map(r => r.pctPrev).filter(v => v != null);
+    const pMin = Math.min(...pcts), pMax = Math.max(...pcts);
+    const ppMin = Math.min(...prevPcts), ppMax = Math.max(...prevPcts);
+    dataRows.forEach((row, ri) => {
+      applyTextStyle(ws, ri + 1, 0);
+      applyTextStyle(ws, ri + 1, 1);
+      applyTextStyle(ws, ri + 1, 2);
+      applyPctStyle(ws, ri + 1, 3, filteredStores[ri].pct, pMin, pMax);
+      applyPctStyle(ws, ri + 1, 4, filteredStores[ri].pctPrev, ppMin, ppMax);
+    });
+    ws['!cols'] = [{ wch: 10 }, { wch: 8 }, { wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Магазины');
     XLSX.writeFile(wb, `Капсулы_Магазины_${region}.xlsx`);
   }
 

@@ -243,15 +243,15 @@ export default function PricingPage({ region }) {
         b = Math.round(4   + t * (38  - 4));
       }
 
-      // Light background tint: mix color with white at 25%
-      const bgR = Math.round(r + (255 - r) * 0.65);
-      const bgG = Math.round(g + (255 - g) * 0.65);
-      const bgB = Math.round(b + (255 - b) * 0.65);
+      // Light tint: mix with white at 30% to keep colors vivid but still readable
+      const bgR = Math.round(r + (255 - r) * 0.30);
+      const bgG = Math.round(g + (255 - g) * 0.30);
+      const bgB = Math.round(b + (255 - b) * 0.30);
 
       const toHex = v => v.toString(16).padStart(2, '0').toUpperCase();
       return {
         bg: toHex(bgR) + toHex(bgG) + toHex(bgB),
-        fg: '000000', // black text — readable on any light background
+        fg: '000000',
       };
     }
 
