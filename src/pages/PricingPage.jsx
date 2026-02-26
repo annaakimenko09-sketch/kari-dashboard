@@ -37,20 +37,24 @@ function SortIcon({ field, sortField, sortDir }) {
   return <span className="ml-1">{sortDir === 'desc' ? '↓' : '↑'}</span>;
 }
 
-function DataTable({ rows, columns, sortField, sortDir, onToggleSort, colorScales }) {
+// labelCols: which text columns to show before the % columns
+function DataTable({ rows, columns, sortField, sortDir, onToggleSort, colorScales, labelCols }) {
   if (rows.length === 0) return <p className="text-gray-400 text-sm text-center py-8">Нет данных</p>;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-100">
-            <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Регион</th>
-            <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Подразделение</th>
-            <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Магазин</th>
+            {labelCols.map(lc => (
+              <th key={lc.key} className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                {lc.label}
+              </th>
+            ))}
             {columns.map(col => (
               <th
                 key={col.key}
-                className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-800 whitespace-nowrap"
+                className="text-right px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-800"
+                style={{ maxWidth: 110, whiteSpace: 'normal', lineHeight: '1.2', wordBreak: 'break-word' }}
                 onClick={() => onToggleSort(col.key)}
               >
                 {col.label} <SortIcon field={col.key} sortField={sortField} sortDir={sortDir} />
@@ -61,15 +65,17 @@ function DataTable({ rows, columns, sortField, sortDir, onToggleSort, colorScale
         <tbody>
           {rows.map((r, i) => (
             <tr key={i} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-              <td className="px-3 py-2 text-gray-600 text-xs whitespace-nowrap">{r.region || '—'}</td>
-              <td className="px-3 py-2 text-gray-700 text-xs whitespace-nowrap">{r.subdiv || '—'}</td>
-              <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">{r.store || '—'}</td>
+              {labelCols.map(lc => (
+                <td key={lc.key} className="px-3 py-2 text-gray-700 text-xs whitespace-nowrap font-medium">
+                  {r[lc.key] || '—'}
+                </td>
+              ))}
               {columns.map(col => {
                 const scale = colorScales[col.key] || { min: 0, max: 100 };
                 return (
-                  <td key={col.key} className="px-3 py-2 text-right">
+                  <td key={col.key} className="px-2 py-2 text-right">
                     <span
-                      className="px-2 py-0.5 rounded text-xs font-medium"
+                      className="px-1.5 py-0.5 rounded text-xs font-medium"
                       style={pctColor(r[col.key], scale.min, scale.max, col.key)}
                     >
                       {fmtPct(r[col.key])}
@@ -84,6 +90,13 @@ function DataTable({ rows, columns, sortField, sortDir, onToggleSort, colorScale
     </div>
   );
 }
+
+// Label columns per tab
+const LABEL_COLS = {
+  regions: [{ key: 'region', label: 'Регион' }],
+  subdivs: [{ key: 'region', label: 'Регион' }, { key: 'subdiv', label: 'Подразделение' }],
+  stores:  [{ key: 'region', label: 'Регион' }, { key: 'subdiv', label: 'Подразд.' }, { key: 'store', label: 'Магазин' }],
+};
 
 export default function PricingPage({ region }) {
   const { spbPricing, belPricing } = useData();
@@ -142,9 +155,11 @@ export default function PricingPage({ region }) {
 
   function exportToExcel(rows, sheetName) {
     if (!data || rows.length === 0) return;
+    const labelCols = LABEL_COLS[activeTab];
     const wb = XLSX.utils.book_new();
-    const header = ['Регион', 'Подразделение', 'Магазин', ...columns.map(c => c.label)];
-    const dataRows = rows.map(r => [r.region, r.subdiv, r.store, ...columns.map(c => r[c.key])]);
+    const header = [...labelCols.map(lc => lc.label), ...columns.map(c => c.label)];
+    const dataRows = rows.map(r => [...labelCols.map(lc => r[lc.key]), ...columns.map(c => r[c.key])]);
+    const labelCount = labelCols.length;
     const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
 
     // Conditional formatting via cell styles (xlsx-js-style not available, use background fill via color logic)
@@ -152,10 +167,10 @@ export default function PricingPage({ region }) {
     const scales = {};
     for (const col of columns) scales[col.key] = buildColorScale(rows, col.key);
 
-    // Apply styles to data cells (columns D onwards = col index 3+)
+    // Apply styles to data cells (after label columns)
     dataRows.forEach((row, ri) => {
       columns.forEach((col, ci) => {
-        const cellAddr = XLSX.utils.encode_cell({ r: ri + 1, c: 3 + ci });
+        const cellAddr = XLSX.utils.encode_cell({ r: ri + 1, c: labelCount + ci });
         const val = rows[ri][col.key];
         const sc = scales[col.key];
         const style = pctColor(val, sc.min, sc.max, col.key);
@@ -174,7 +189,7 @@ export default function PricingPage({ region }) {
     // Format % columns as number
     const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
     for (let ri = 1; ri <= range.e.r; ri++) {
-      for (let ci = 3; ci <= range.e.c; ci++) {
+      for (let ci = labelCount; ci <= range.e.c; ci++) {
         const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
         if (ws[addr] && typeof ws[addr].v === 'number') {
           ws[addr].z = '0.0"%"';
@@ -263,6 +278,7 @@ export default function PricingPage({ region }) {
           sortDir={sortDir}
           onToggleSort={toggleSort}
           colorScales={colorScales}
+          labelCols={LABEL_COLS[activeTab]}
         />
       </div>
     </div>
