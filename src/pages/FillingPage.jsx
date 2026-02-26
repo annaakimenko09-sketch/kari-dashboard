@@ -28,12 +28,16 @@ function ExpandedRow({ store, colSpan }) {
           <div>
             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Наполненность по сезонам</p>
             <div className="overflow-x-auto">
-              <table className="text-xs w-full" style={{ tableLayout: 'auto' }}>
+              <table className="text-xs w-full" style={{ tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '140px' }} />
+                  {FILLING_SEASONS.map(s => <col key={s.key} style={{ width: '90px' }} />)}
+                </colgroup>
                 <thead>
                   <tr className="border-b border-gray-200">
                     <th className="text-left px-2 py-1.5 text-gray-500 font-semibold">Метрика</th>
                     {FILLING_SEASONS.map(s => (
-                      <th key={s.key} className="text-center px-2 py-1.5 text-gray-500 font-semibold whitespace-nowrap">{s.label}</th>
+                      <th key={s.key} className="text-center px-2 py-1.5 text-gray-500 font-semibold" style={{ wordBreak: 'break-word', hyphens: 'auto' }}>{s.label}</th>
                     ))}
                   </tr>
                 </thead>
@@ -64,16 +68,21 @@ function ExpandedRow({ store, colSpan }) {
             <div>
               <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">В пути по сезонам</p>
               <div className="overflow-x-auto">
-                <table className="text-xs w-full" style={{ tableLayout: 'auto' }}>
+                <table className="text-xs w-full" style={{ tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '140px' }} />
+                    {TRANSIT_SEASONS.map(s => <col key={s.key} style={{ width: '90px' }} />)}
+                    <col style={{ width: '80px' }} />
+                  </colgroup>
                   <thead>
                     <tr className="border-b border-gray-200">
                       <th className="text-left px-2 py-1.5 text-gray-500 font-semibold">Метрика</th>
                       {TRANSIT_SEASONS.map(s => (
-                        <th key={s.key} className="text-center px-2 py-1.5 text-gray-500 font-semibold whitespace-nowrap">
+                        <th key={s.key} className="text-center px-2 py-1.5 text-gray-500 font-semibold" style={{ wordBreak: 'break-word', hyphens: 'auto' }}>
                           {FILLING_SEASONS.find(f => f.key === s.key)?.label || s.key}
                         </th>
                       ))}
-                      <th className="text-center px-2 py-1.5 text-gray-700 font-bold whitespace-nowrap bg-gray-100">Итого</th>
+                      <th className="text-center px-2 py-1.5 text-gray-700 font-bold bg-gray-100">Итого</th>
                     </tr>
                   </thead>
                   <tbody>
