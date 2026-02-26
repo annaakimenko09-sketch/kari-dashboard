@@ -42,11 +42,11 @@ function DataTable({ rows, columns, sortField, sortDir, onToggleSort, colorScale
   if (rows.length === 0) return <p className="text-gray-400 text-sm text-center py-8">Нет данных</p>;
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="text-sm" style={{ tableLayout: 'fixed', width: '100%' }}>
         <thead>
           <tr className="border-b border-gray-100">
             {labelCols.map(lc => (
-              <th key={lc.key} className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+              <th key={lc.key} className="text-center px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: lc.width || 90, wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.2' }}>
                 {lc.label}
               </th>
             ))}
@@ -66,7 +66,7 @@ function DataTable({ rows, columns, sortField, sortDir, onToggleSort, colorScale
           {rows.map((r, i) => (
             <tr key={i} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
               {labelCols.map(lc => (
-                <td key={lc.key} className="px-3 py-2 text-center text-gray-700 text-xs whitespace-nowrap font-medium">
+                <td key={lc.key} className="px-2 py-2 text-center text-gray-700 text-xs font-medium" style={{ wordBreak: 'break-word' }}>
                   {r[lc.key] || '—'}
                 </td>
               ))}
@@ -93,9 +93,9 @@ function DataTable({ rows, columns, sortField, sortDir, onToggleSort, colorScale
 
 // Label columns per tab
 const LABEL_COLS = {
-  regions: [{ key: 'region', label: 'Регион' }],
-  subdivs: [{ key: 'region', label: 'Регион' }, { key: 'subdiv', label: 'Подразделение' }],
-  stores:  [{ key: 'region', label: 'Регион' }, { key: 'subdiv', label: 'Подразд.' }, { key: 'store', label: 'Магазин' }],
+  regions: [{ key: 'region', label: 'Регион', width: 80 }],
+  subdivs: [{ key: 'region', label: 'Регион', width: 70 }, { key: 'subdiv', label: 'Подразделение', width: 110 }],
+  stores:  [{ key: 'region', label: 'Регион', width: 60 }, { key: 'subdiv', label: 'Подразд.', width: 90 }, { key: 'store', label: 'Магазин', width: 120 }],
 };
 
 export default function PricingPage({ region }) {
