@@ -238,10 +238,51 @@ export async function parseExcelFiles(fileList) {
       const wb = XLSX.read(buffer, { type: 'array', cellDates: false });
 
       const fname = file.name;
-      const isKids = fname.includes('кидс') || fname.includes('Кидс') || fname.toLowerCase().includes('kids');
       const isWeekly = fname.includes('Неделя') || fname.toLowerCase().includes('week');
-      const productGroup = isKids ? 'Кидс' : 'Обувь';
       const reportType = isWeekly ? 'Неделя' : 'Месяц';
+
+      // Determine product group:
+      // 1. Filename contains 'кидс'/'kids' → Кидс
+      // 2. Title (row 0) contains 'кидс'/'kids'/'дет' → Кидс
+      // 3. First data rows of 'Детализация' contain kids-specific categories → Кидс
+      let productGroup = 'Обувь';
+      const fnLower = fname.toLowerCase();
+      if (fnLower.includes('кидс') || fnLower.includes('kids')) {
+        productGroup = 'Кидс';
+      } else {
+        // Check title in 'Отчет' sheet (row 0, col 0)
+        const reportSheet = wb.Sheets['Отчет'] || wb.Sheets[wb.SheetNames[0]];
+        if (reportSheet) {
+          const titleRows = XLSX.utils.sheet_to_json(reportSheet, { header: 1, defval: null, range: 0 });
+          const title = titleRows[0]?.[0] ? String(titleRows[0][0]).toLowerCase() : '';
+          if (title.includes('кидс') || title.includes('kids') || title.includes('детск')) {
+            productGroup = 'Кидс';
+          }
+        }
+        // If still Обувь — sample first data rows of 'Детализация' for kids categories
+        if (productGroup === 'Обувь' && wb.Sheets['Детализация']) {
+          const detSheet = wb.Sheets['Детализация'];
+          const detRows = XLSX.utils.sheet_to_json(detSheet, { header: 1, defval: null });
+          // Find header row, then check first ~10 data rows
+          let hIdx = -1;
+          for (let i = 0; i < detRows.length; i++) {
+            if (detRows[i][0] === 'Регион') { hIdx = i; break; }
+          }
+          if (hIdx >= 0) {
+            const kidsKeywords = ['игрушк', 'детск', 'кидс', 'kids', 'одежда дет', 'для девочек', 'для мальчиков', 'для новорожд'];
+            const sample = detRows.slice(hIdx + 1, hIdx + 11);
+            const hasKids = sample.some(row => {
+              if (!row) return false;
+              return row.some(cell => {
+                if (!cell) return false;
+                const s = String(cell).toLowerCase();
+                return kidsKeywords.some(k => s.includes(k));
+              });
+            });
+            if (hasKids) productGroup = 'Кидс';
+          }
+        }
+      }
 
       let summary = [];
       let detail = [];
