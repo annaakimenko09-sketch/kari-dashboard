@@ -17,27 +17,6 @@ function fmtPct(v) {
   return v.toFixed(1) + '%';
 }
 
-// Gradient: higher = worse (red), lower = better (green)
-function gradientBg(val, min, max) {
-  if (val === null || val === undefined || max === min) return {};
-  const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
-  let r, g, b;
-  if (ratio <= 0.5) {
-    const t = ratio / 0.5;
-    r = Math.round(22  + t * (202 - 22));
-    g = Math.round(163 + t * (138 - 163));
-    b = Math.round(74  + t * (4   - 74));
-  } else {
-    const t = (ratio - 0.5) / 0.5;
-    r = Math.round(202 + t * (220 - 202));
-    g = Math.round(138 + t * (38  - 138));
-    b = Math.round(4   + t * (38  - 4));
-  }
-  const bgR = Math.round(r + (255 - r) * 0.25);
-  const bgG = Math.round(g + (255 - g) * 0.25);
-  const bgB = Math.round(b + (255 - b) * 0.25);
-  return { backgroundColor: `rgb(${bgR},${bgG},${bgB})`, color: '#111827' };
-}
 
 // Expanded row showing seasonal breakdown
 function ExpandedRow({ store, colSpan }) {
@@ -64,11 +43,12 @@ function ExpandedRow({ store, colSpan }) {
                       <td className="px-2 py-1 text-gray-600 font-medium whitespace-nowrap">{sub.label}</td>
                       {FILLING_SEASONS.map(s => {
                         const val = store.seasons?.[s.key]?.[sub.key];
+                        const display = (sub.key === 'sharePct' || sub.key === 'sellout')
+                          ? fmtPct(val)
+                          : fmtNum(val);
                         return (
                           <td key={s.key} className="px-2 py-1 text-center text-gray-700">
-                            {sub.key === 'sharePct' || sub.key === 'sellout' || sub.key === 'turnover'
-                              ? fmtNum(val)
-                              : fmtNum(val)}
+                            {display}
                           </td>
                         );
                       })}
@@ -93,43 +73,54 @@ function ExpandedRow({ store, colSpan }) {
                           {FILLING_SEASONS.find(f => f.key === s.key)?.label || s.key}
                         </th>
                       ))}
+                      <th className="text-center px-2 py-1.5 text-gray-700 font-bold whitespace-nowrap bg-gray-100">Итого</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {TRANSIT_SUB_KEYS.map(sub => (
-                      <tr key={sub.key} className="border-b border-gray-100 hover:bg-gray-100">
-                        <td className="px-2 py-1 text-gray-600 font-medium whitespace-nowrap">{sub.label}</td>
-                        {TRANSIT_SEASONS.map(s => {
-                          const val = store.transitSeasons?.[s.key]?.[sub.key];
-                          return (
-                            <td key={s.key} className="px-2 py-1 text-center text-gray-700">
-                              {fmtNum(val)}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
+                    {TRANSIT_SUB_KEYS.map(sub => {
+                      // Sum across all seasons for this sub-key
+                      const rowTotal = TRANSIT_SEASONS.reduce((sum, s) => {
+                        const v = store.transitSeasons?.[s.key]?.[sub.key];
+                        return sum + (v !== null && v !== undefined ? v : 0);
+                      }, 0);
+                      return (
+                        <tr key={sub.key} className="border-b border-gray-100 hover:bg-gray-100">
+                          <td className="px-2 py-1 text-gray-600 font-medium whitespace-nowrap">{sub.label}</td>
+                          {TRANSIT_SEASONS.map(s => {
+                            const val = store.transitSeasons?.[s.key]?.[sub.key];
+                            return (
+                              <td key={s.key} className="px-2 py-1 text-center text-gray-700">
+                                {fmtNum(val)}
+                              </td>
+                            );
+                          })}
+                          <td className="px-2 py-1 text-center font-semibold text-gray-800 bg-gray-50">
+                            {fmtNum(rowTotal || null)}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
 
-          {/* Transit totals */}
-          {store.transitTotal && (
-            <div className="flex gap-6 text-xs">
-              <div className="bg-white rounded-lg px-3 py-2 border border-gray-200">
-                <p className="text-gray-400 mb-0.5">Всего в пути</p>
-                <p className="font-bold text-gray-800">{fmtNum(store.transitTotal.totalInTransit)}</p>
-              </div>
-              <div className="bg-white rounded-lg px-3 py-2 border border-gray-200">
-                <p className="text-gray-400 mb-0.5">В заказах Отгружено</p>
-                <p className="font-bold text-gray-800">{fmtNum(store.transitTotal.shipped)}</p>
-              </div>
-              <div className="bg-white rounded-lg px-3 py-2 border border-gray-200">
-                <p className="text-gray-400 mb-0.5">В заказах Создано</p>
-                <p className="font-bold text-gray-800">{fmtNum(store.transitTotal.created)}</p>
-              </div>
+              {/* Transit grand totals */}
+              {store.transitTotal && (
+                <div className="flex gap-4 mt-2 text-xs">
+                  <div className="bg-blue-50 rounded-lg px-3 py-2 border border-blue-100">
+                    <p className="text-blue-400 mb-0.5">Всего в пути (итого)</p>
+                    <p className="font-bold text-blue-800">{fmtNum(store.transitTotal.totalInTransit)}</p>
+                  </div>
+                  <div className="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                    <p className="text-gray-400 mb-0.5">В заказах Отгружено</p>
+                    <p className="font-bold text-gray-800">{fmtNum(store.transitTotal.shipped)}</p>
+                  </div>
+                  <div className="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                    <p className="text-gray-400 mb-0.5">В заказах Создано</p>
+                    <p className="font-bold text-gray-800">{fmtNum(store.transitTotal.created)}</p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -188,17 +179,6 @@ export default function FillingPage({ region }) {
     });
     return rows;
   }, [data, subdivFilter, storeFilter, sortField, sortDir]);
-
-  // Color scales for main columns
-  const scales = useMemo(() => {
-    const cols = ['fillPctMax', 'planPairsMax', 'planPairsN', 'lastPairs'];
-    const result = {};
-    for (const col of cols) {
-      const vals = filteredSorted.map(s => s[col]).filter(v => v !== null && v !== undefined);
-      result[col] = { min: Math.min(...vals), max: Math.max(...vals) };
-    }
-    return result;
-  }, [filteredSorted]);
 
   function SortIcon({ field }) {
     if (sortField !== field) return <span className="ml-1 opacity-30">↕</span>;
@@ -555,16 +535,16 @@ export default function FillingPage({ region }) {
                     <td className="px-2 py-2 text-center text-xs font-semibold text-gray-800">{store.store || '—'}</td>
                     <td className="px-2 py-2 text-left text-xs text-gray-700 truncate">{store.name || '—'}</td>
                     <td className="px-2 py-2 text-center text-xs text-gray-500">{store.cat || '—'}</td>
-                    <td className="px-2 py-2 text-center text-xs font-medium" style={gradientBg(store.fillPctMax, scales.fillPctMax?.min, scales.fillPctMax?.max)}>
+                    <td className="px-2 py-2 text-center text-xs font-medium text-gray-800">
                       {store.fillPctMax !== null && store.fillPctMax !== undefined ? fmtPct(store.fillPctMax) : '—'}
                     </td>
-                    <td className="px-2 py-2 text-center text-xs" style={gradientBg(store.planPairsMax, scales.planPairsMax?.min, scales.planPairsMax?.max)}>
+                    <td className="px-2 py-2 text-center text-xs text-gray-700">
                       {fmtNum(store.planPairsMax)}
                     </td>
-                    <td className="px-2 py-2 text-center text-xs" style={gradientBg(store.planPairsN, scales.planPairsN?.min, scales.planPairsN?.max)}>
+                    <td className="px-2 py-2 text-center text-xs text-gray-700">
                       {fmtNum(store.planPairsN)}
                     </td>
-                    <td className="px-2 py-2 text-center text-xs" style={gradientBg(store.lastPairs, scales.lastPairs?.min, scales.lastPairs?.max)}>
+                    <td className="px-2 py-2 text-center text-xs text-gray-700">
                       {fmtNum(store.lastPairs)}
                     </td>
                   </tr>,

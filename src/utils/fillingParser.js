@@ -95,17 +95,25 @@ function parseFilling(ws) {
     if (!store) continue;
 
     // Main metrics (cols L=11, M=12, N=13, AA=26)
-    const fillPctMax   = toNum(get(11)); // L — % наполненности MAX
+    // fillPctMax stored as fraction in Excel (e.g. 1.27 = 127%) — multiply by 100
+    const fillPctMaxRaw = toNum(get(11));
+    const fillPctMax   = fillPctMaxRaw !== null ? fillPctMaxRaw * 100 : null; // L — % наполненности MAX
     const planPairsMax = toNum(get(12)); // M — Плановое количество MAX
     const planPairsN   = toNum(get(13)); // N — Плановое количество
     const lastPairs    = toNum(get(26)); // AA — Последних пар
 
     // Seasonal data
+    // sharePct and sellout are stored as fractions (0.329 = 32.9%) — multiply by 100
     const seasons = {};
     for (const season of FILLING_SEASONS) {
       const s = {};
       FILLING_SUB_KEYS.forEach((sub, idx) => {
-        s[sub.key] = toNum(get(season.startCol + idx));
+        const raw = toNum(get(season.startCol + idx));
+        if ((sub.key === 'sharePct' || sub.key === 'sellout') && raw !== null) {
+          s[sub.key] = raw * 100;
+        } else {
+          s[sub.key] = raw;
+        }
       });
       seasons[season.key] = s;
     }
