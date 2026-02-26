@@ -28,37 +28,32 @@ function fmtNum(val) {
 }
 
 export default function CapsulePage({ region }) {
-  const { spbCapsule, belCapsule } = useData();
-  const data = region === 'СПБ' ? spbCapsule : belCapsule;
+  const { spbCapsule, belCapsule, capsuleFiles } = useData();
+  // Capsule file is a combined all-regions report — use any available file
+  const data = capsuleFiles?.[0] || spbCapsule || belCapsule;
 
   const [activeTab, setActiveTab] = useState('itogi'); // 'itogi' | 'stores'
+  const [regionFilter, setRegionFilter] = useState('');
   const [subdivFilter, setSubdivFilter] = useState('');
   const [sortField, setSortField] = useState('pct');
   const [sortDir, setSortDir]   = useState('desc');
 
-  const regionKey = region; // 'СПБ' or 'БЕЛ'
-
-  // ── Filter data for this region ──────────────────────────────
+  // ── All data (no region filter — combined file) ───────────────
   const regionRows = useMemo(() => {
     if (!data) return [];
-    return data.regions.filter(r =>
-      r.region.toUpperCase().includes(regionKey.toUpperCase())
-    );
-  }, [data, regionKey]);
+    return data.regions;
+  }, [data]);
 
   const subdivRows = useMemo(() => {
     if (!data) return [];
-    return data.subdivisions.filter(r =>
-      r.region.toUpperCase().includes(regionKey.toUpperCase())
-    );
-  }, [data, regionKey]);
+    if (!regionFilter) return data.subdivisions;
+    return data.subdivisions.filter(r => r.region === regionFilter);
+  }, [data, regionFilter]);
 
   const storeRows = useMemo(() => {
     if (!data) return [];
-    return data.stores.filter(r =>
-      r.region.toUpperCase().includes(regionKey.toUpperCase())
-    );
-  }, [data, regionKey]);
+    return data.stores;
+  }, [data]);
 
   // ── Stores tab filtering/sorting ─────────────────────────────
   const filteredStores = useMemo(() => {
@@ -75,6 +70,11 @@ export default function CapsulePage({ region }) {
     const set = new Set(storeRows.map(r => r.subdiv).filter(Boolean));
     return Array.from(set).sort();
   }, [storeRows]);
+
+  const regionOptions = useMemo(() => {
+    const set = new Set(data?.subdivisions.map(r => r.region).filter(Boolean) || []);
+    return Array.from(set).sort();
+  }, [data]);
 
   // ── Color scales ─────────────────────────────────────────────
   const subdivPcts = subdivRows.map(r => r.pct).filter(v => v !== null);
@@ -135,7 +135,7 @@ export default function CapsulePage({ region }) {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs text-gray-400 mb-0.5">Период отчёта (Капсулы {region})</p>
+            <p className="text-xs text-gray-400 mb-0.5">Период отчёта (Капсулы)</p>
             <p className="text-base font-bold text-gray-800">{data.period || '—'}</p>
           </div>
           <div className="flex gap-2 text-xs">
@@ -209,10 +209,22 @@ export default function CapsulePage({ region }) {
           )}
 
           {/* Subdivisions block */}
-          {subdivRows.length > 0 && (
+          {data.subdivisions.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100">
-                <h2 className="text-sm font-semibold text-gray-700">Подразделения</h2>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 gap-3 flex-wrap">
+                <h2 className="text-sm font-semibold text-gray-700">
+                  Подразделения {subdivRows.length > 0 && <span className="text-gray-400 font-normal">({subdivRows.length})</span>}
+                </h2>
+                {regionOptions.length > 1 && (
+                  <select
+                    value={regionFilter}
+                    onChange={e => setRegionFilter(e.target.value)}
+                    className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-cyan-300"
+                  >
+                    <option value="">Все регионы</option>
+                    {regionOptions.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                )}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -247,8 +259,8 @@ export default function CapsulePage({ region }) {
             </div>
           )}
 
-          {regionRows.length === 0 && subdivRows.length === 0 && (
-            <p className="text-gray-400 text-sm text-center py-8">Нет данных для региона {region}</p>
+          {regionRows.length === 0 && data.subdivisions.length === 0 && (
+            <p className="text-gray-400 text-sm text-center py-8">Нет данных в файле</p>
           )}
         </div>
       )}
