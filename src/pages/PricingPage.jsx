@@ -251,7 +251,7 @@ export default function PricingPage({ region }) {
       const toHex = v => v.toString(16).padStart(2, '0').toUpperCase();
       return {
         bg: toHex(bgR) + toHex(bgG) + toHex(bgB),
-        fg: toHex(r) + toHex(g) + toHex(b),
+        fg: '000000', // black text — readable on any light background
       };
     }
 
