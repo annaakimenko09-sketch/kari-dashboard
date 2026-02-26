@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import { Download } from 'lucide-react';
 
 // Color: higher value = red (worse), lower = green (better)
@@ -200,35 +200,105 @@ export default function PricingPage({ region }) {
     const labelCount = labelCols.length;
     const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
 
+    // Style header row
+    header.forEach((_, ci) => {
+      const addr = XLSX.utils.encode_cell({ r: 0, c: ci });
+      if (ws[addr]) {
+        ws[addr].s = {
+          font: { bold: true, color: { rgb: '374151' } },
+          fill: { fgColor: { rgb: 'F3F4F6' } },
+          alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+          border: {
+            bottom: { style: 'thin', color: { rgb: 'D1D5DB' } },
+          },
+        };
+      }
+    });
+
+    // Build color scales per column
     const scales = {};
     for (const col of columns) scales[col.key] = buildColorScale(rows, col.key);
 
+    // Gradient color: interpolate green→yellow→red (or reverse for inverted cols)
+    function gradientColor(val, min, max, colKey) {
+      if (val === null || val === undefined) return { bg: 'FFFFFF', fg: '374151' };
+      if (max === min) return { bg: 'FEF9C3', fg: '713F12' };
+      const ratio = (val - min) / (max - min); // 0=min, 1=max
+      const isInverted = INVERTED_COLS.has(colKey);
+      // badRatio: 0=best(green), 1=worst(red)
+      const badRatio = isInverted ? 1 - ratio : ratio;
+
+      let r, g, b;
+      if (badRatio <= 0.5) {
+        // green (#16a34a) → yellow (#ca8a04)
+        const t = badRatio / 0.5;
+        r = Math.round(22  + t * (202 - 22));
+        g = Math.round(163 + t * (138 - 163));
+        b = Math.round(74  + t * (4   - 74));
+      } else {
+        // yellow (#ca8a04) → red (#dc2626)
+        const t = (badRatio - 0.5) / 0.5;
+        r = Math.round(202 + t * (220 - 202));
+        g = Math.round(138 + t * (38  - 138));
+        b = Math.round(4   + t * (38  - 4));
+      }
+
+      // Light background tint: mix color with white at 25%
+      const bgR = Math.round(r + (255 - r) * 0.65);
+      const bgG = Math.round(g + (255 - g) * 0.65);
+      const bgB = Math.round(b + (255 - b) * 0.65);
+
+      const toHex = v => v.toString(16).padStart(2, '0').toUpperCase();
+      return {
+        bg: toHex(bgR) + toHex(bgG) + toHex(bgB),
+        fg: toHex(r) + toHex(g) + toHex(b),
+      };
+    }
+
     dataRows.forEach((row, ri) => {
+      // Style label cells
+      labelCols.forEach((lc, ci) => {
+        const addr = XLSX.utils.encode_cell({ r: ri + 1, c: ci });
+        if (ws[addr]) {
+          ws[addr].s = {
+            font: { color: { rgb: '374151' } },
+            alignment: { horizontal: 'center', vertical: 'center' },
+          };
+        }
+      });
+
+      // Style % cells with gradient
       columns.forEach((col, ci) => {
-        const cellAddr = XLSX.utils.encode_cell({ r: ri + 1, c: labelCount + ci });
+        const addr = XLSX.utils.encode_cell({ r: ri + 1, c: labelCount + ci });
         const val = rows[ri][col.key];
         const sc = scales[col.key];
-        const style = pctColor(val, sc.min, sc.max, col.key);
-        const cell = ws[cellAddr];
-        if (cell && style.backgroundColor) {
-          const hex = style.backgroundColor.replace('#', '');
-          cell.s = {
-            fill: { fgColor: { rgb: hex.toUpperCase() } },
-            font: { color: { rgb: (style.color || '#000000').replace('#', '').toUpperCase() } },
+        const { bg, fg } = gradientColor(val, sc.min, sc.max, col.key);
+        if (ws[addr]) {
+          ws[addr].s = {
+            fill: { fgColor: { rgb: bg } },
+            font: { color: { rgb: fg }, bold: false },
+            alignment: { horizontal: 'center', vertical: 'center' },
+            numFmt: '0.0%',
           };
+          // Store as fraction for proper % format
+          if (typeof ws[addr].v === 'number') {
+            ws[addr].v = ws[addr].v / 100;
+            ws[addr].t = 'n';
+            ws[addr].z = '0.0%';
+          }
         }
       });
     });
 
-    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-    for (let ri = 1; ri <= range.e.r; ri++) {
-      for (let ci = labelCount; ci <= range.e.c; ci++) {
-        const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
-        if (ws[addr] && typeof ws[addr].v === 'number') {
-          ws[addr].z = '0.0"%"';
-        }
-      }
-    }
+    // Column widths
+    const colWidths = [
+      ...labelCols.map(lc => ({ wch: lc.key === 'store' ? 12 : lc.key === 'subdiv' ? 10 : 8 })),
+      ...columns.map(() => ({ wch: 16 })),
+    ];
+    ws['!cols'] = colWidths;
+
+    // Row height for header
+    ws['!rows'] = [{ hpt: 40 }];
 
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
     XLSX.writeFile(wb, `Цены_полупары_${region}_${sheetName}.xlsx`);
