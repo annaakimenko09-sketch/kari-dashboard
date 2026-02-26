@@ -29,8 +29,13 @@ function fmtNum(val) {
 
 export default function CapsulePage({ region }) {
   const { spbCapsule, belCapsule, capsuleFiles } = useData();
-  // Capsule file is a combined all-regions report — use any available file
-  const data = capsuleFiles?.[0] || spbCapsule || belCapsule;
+
+  // Итоги (regions + subdivisions) are identical in both files — use any available
+  const itogiData = capsuleFiles?.[0] || spbCapsule || belCapsule;
+  // Магазины are region-specific — use the matching file
+  const storesData = region === 'СПБ' ? spbCapsule : belCapsule;
+  // If no region-specific file, fall back to first available
+  const data = itogiData;
 
   const [activeTab, setActiveTab] = useState('itogi'); // 'itogi' | 'stores'
   const [regionFilter, setRegionFilter] = useState('');
@@ -38,7 +43,7 @@ export default function CapsulePage({ region }) {
   const [sortField, setSortField] = useState('pct');
   const [sortDir, setSortDir]   = useState('desc');
 
-  // ── All data (no region filter — combined file) ───────────────
+  // ── Итоги data — same for both pages (all-regions summary) ───
   const regionRows = useMemo(() => {
     if (!data) return [];
     return data.regions;
@@ -50,10 +55,11 @@ export default function CapsulePage({ region }) {
     return data.subdivisions.filter(r => r.region === regionFilter);
   }, [data, regionFilter]);
 
+  // ── Магазины — region-specific ────────────────────────────────
   const storeRows = useMemo(() => {
-    if (!data) return [];
-    return data.stores;
-  }, [data]);
+    if (!storesData) return [];
+    return storesData.stores;
+  }, [storesData]);
 
   // ── Stores tab filtering/sorting ─────────────────────────────
   const filteredStores = useMemo(() => {

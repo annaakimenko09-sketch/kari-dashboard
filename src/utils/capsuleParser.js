@@ -145,8 +145,17 @@ function parseCapsuleFile(wb, fileName) {
     }
   }
 
-  // This is a combined all-regions file — always fileRegion = 'ALL'
-  return { fileName, fileRegion: 'ALL', period, regions, subdivisions, stores };
+  // Determine fileRegion from Магазины sheet (stores are region-specific)
+  let fileRegion = 'ALL';
+  if (stores.length > 0) {
+    const storeRegions = new Set(stores.map(r => r.region).filter(Boolean));
+    const hasSPB = [...storeRegions].some(r => r.toUpperCase().includes('СПБ'));
+    const hasBEL = [...storeRegions].some(r => r.toUpperCase().includes('БЕЛ'));
+    if (hasSPB && !hasBEL) fileRegion = 'СПБ';
+    else if (hasBEL && !hasSPB) fileRegion = 'БЕЛ';
+  }
+
+  return { fileName, fileRegion, period, regions, subdivisions, stores };
 }
 
 export async function parseCapsuleFiles(fileList) {
