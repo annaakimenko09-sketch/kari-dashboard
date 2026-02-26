@@ -12,7 +12,6 @@ function pctColor(val, min, max, colKey) {
   if (max === min) return { backgroundColor: '#fef9c3', color: '#713f12' };
   const ratio = (val - min) / (max - min);
   const isInverted = INVERTED_COLS.has(colKey);
-  // ratio=1 means max (worst for normal cols, best for inverted)
   const badRatio = isInverted ? 1 - ratio : ratio;
   if (badRatio >= 0.67) return { backgroundColor: '#fee2e2', color: '#991b1b' };
   if (badRatio >= 0.33) return { backgroundColor: '#fef9c3', color: '#713f12' };
@@ -98,6 +97,8 @@ const LABEL_COLS = {
   stores:  [{ key: 'region', label: 'Регион', width: 60 }, { key: 'subdiv', label: 'Подразд.', width: 90 }, { key: 'store', label: 'Магазин', width: 120 }],
 };
 
+const SELECT_CLS = 'text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:border-gray-400';
+
 export default function PricingPage({ region }) {
   const { spbPricing, belPricing } = useData();
   const data = region === 'СПБ' ? spbPricing : belPricing;
@@ -106,9 +107,22 @@ export default function PricingPage({ region }) {
   const [sortField, setSortField] = useState('c0');
   const [sortDir, setSortDir]   = useState('desc');
 
+  // Filters for stores tab
+  const [storeSubdivFilter, setStoreSubdivFilter] = useState('');
+  const [storeNameFilter, setStoreNameFilter]     = useState('');
+
   function toggleSort(field) {
     if (sortField === field) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
     else { setSortField(field); setSortDir('desc'); }
+  }
+
+  // Reset store filters when switching tabs
+  function handleTabChange(key) {
+    setActiveTab(key);
+    if (key !== 'stores') {
+      setStoreSubdivFilter('');
+      setStoreNameFilter('');
+    }
   }
 
   const columns = data?.columns || [];
@@ -140,18 +154,42 @@ export default function PricingPage({ region }) {
     });
   }, [data, sortField, sortDir]);
 
-  // Color scales per tab
+  // Subdivision options for stores filter
+  const subdivOptions = useMemo(() => {
+    if (!data) return [];
+    const set = new Set(data.stores.map(r => r.subdiv).filter(Boolean));
+    return Array.from(set).sort();
+  }, [data]);
+
+  // Store name options — filtered by selected subdiv
+  const storeOptions = useMemo(() => {
+    if (!data) return [];
+    let rows = data.stores;
+    if (storeSubdivFilter) rows = rows.filter(r => r.subdiv === storeSubdivFilter);
+    const set = new Set(rows.map(r => r.store).filter(Boolean));
+    return Array.from(set).sort();
+  }, [data, storeSubdivFilter]);
+
+  // Filtered+sorted stores (for table display and export)
+  const filteredStores = useMemo(() => {
+    let rows = sortedStores;
+    if (storeSubdivFilter) rows = rows.filter(r => r.subdiv === storeSubdivFilter);
+    if (storeNameFilter)   rows = rows.filter(r => r.store === storeNameFilter);
+    return rows;
+  }, [sortedStores, storeSubdivFilter, storeNameFilter]);
+
+  // Color scales per tab (use filteredStores for stores tab)
   const colorScales = useMemo(() => {
     const activeRows =
       activeTab === 'regions'  ? sortedRegions  :
       activeTab === 'subdivs'  ? sortedSubdivs  :
-      sortedStores;
+      filteredStores;
     const scales = {};
     for (const col of columns) {
       scales[col.key] = buildColorScale(activeRows, col.key);
     }
     return scales;
-  }, [activeTab, sortedRegions, sortedSubdivs, sortedStores, columns]);
+  }, [activeTab, sortedRegions, sortedSubdivs, filteredStores, columns]);
 
   function exportToExcel(rows, sheetName) {
     if (!data || rows.length === 0) return;
@@ -162,12 +200,9 @@ export default function PricingPage({ region }) {
     const labelCount = labelCols.length;
     const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
 
-    // Conditional formatting via cell styles (xlsx-js-style not available, use background fill via color logic)
-    // Build color scale for export
     const scales = {};
     for (const col of columns) scales[col.key] = buildColorScale(rows, col.key);
 
-    // Apply styles to data cells (after label columns)
     dataRows.forEach((row, ri) => {
       columns.forEach((col, ci) => {
         const cellAddr = XLSX.utils.encode_cell({ r: ri + 1, c: labelCount + ci });
@@ -176,7 +211,6 @@ export default function PricingPage({ region }) {
         const style = pctColor(val, sc.min, sc.max, col.key);
         const cell = ws[cellAddr];
         if (cell && style.backgroundColor) {
-          // Convert hex color to ARGB for xlsx
           const hex = style.backgroundColor.replace('#', '');
           cell.s = {
             fill: { fgColor: { rgb: hex.toUpperCase() } },
@@ -186,7 +220,6 @@ export default function PricingPage({ region }) {
       });
     });
 
-    // Format % columns as number
     const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
     for (let ri = 1; ri <= range.e.r; ri++) {
       for (let ci = labelCount; ci <= range.e.c; ci++) {
@@ -220,7 +253,7 @@ export default function PricingPage({ region }) {
   const activeRows =
     activeTab === 'regions' ? sortedRegions :
     activeTab === 'subdivs' ? sortedSubdivs :
-    sortedStores;
+    filteredStores;
 
   const activeSheetName =
     activeTab === 'regions' ? 'Регионы' :
@@ -249,7 +282,7 @@ export default function PricingPage({ region }) {
         {TABS.map(({ key, label }) => (
           <button
             key={key}
-            onClick={() => setActiveTab(key)}
+            onClick={() => handleTabChange(key)}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
               activeTab === key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
             }`}
@@ -261,8 +294,38 @@ export default function PricingPage({ region }) {
 
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-700">{activeSheetName}</h2>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-sm font-semibold text-gray-700">{activeSheetName}</h2>
+            {/* Filters — only for stores tab */}
+            {activeTab === 'stores' && (
+              <>
+                {subdivOptions.length > 1 && (
+                  <select
+                    value={storeSubdivFilter}
+                    onChange={e => { setStoreSubdivFilter(e.target.value); setStoreNameFilter(''); }}
+                    className={SELECT_CLS}
+                  >
+                    <option value="">Все подразделения</option>
+                    {subdivOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                )}
+                {storeOptions.length > 1 && (
+                  <select
+                    value={storeNameFilter}
+                    onChange={e => setStoreNameFilter(e.target.value)}
+                    className={SELECT_CLS}
+                  >
+                    <option value="">Все магазины</option>
+                    {storeOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                )}
+                {(storeSubdivFilter || storeNameFilter) && (
+                  <span className="text-xs text-gray-400">{filteredStores.length} из {sortedStores.length}</span>
+                )}
+              </>
+            )}
+          </div>
           <button
             onClick={() => exportToExcel(activeRows, activeSheetName)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
