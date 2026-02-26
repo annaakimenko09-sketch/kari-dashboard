@@ -30,12 +30,13 @@ function fmtNum(val) {
 export default function CapsulePage({ region }) {
   const { spbCapsule, belCapsule, capsuleFiles } = useData();
 
-  // Итоги (regions + subdivisions) are identical in both files — use any available
-  const itogiData = capsuleFiles?.[0] || spbCapsule || belCapsule;
-  // Магазины are region-specific — use the matching file
-  const storesData = region === 'СПБ' ? spbCapsule : belCapsule;
-  // If no region-specific file, fall back to first available
-  const data = itogiData;
+  // Use the region-specific file for this page (subdivisions differ between files)
+  const regionFile = region === 'СПБ' ? spbCapsule : belCapsule;
+  // Regions summary (all-regions) is the same in both — use any available as fallback
+  const anyFile = capsuleFiles?.[0] || null;
+  const data = regionFile || anyFile;
+  // Магазины are region-specific — same file
+  const storesData = regionFile;
 
   const [activeTab, setActiveTab] = useState('itogi'); // 'itogi' | 'stores'
   const [regionFilter, setRegionFilter] = useState('');
