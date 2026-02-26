@@ -3,6 +3,7 @@ import { parseExcelFiles, mergeSummaryData, mergeDetailData, mergeRegionTotals }
 import { parseScanningFiles } from '../utils/scanningParser';
 import { parseJewelryFiles } from '../utils/jewelryParser';
 import { parseCapsuleFiles } from '../utils/capsuleParser';
+import { parsePricingFiles } from '../utils/pricingParser';
 
 const DataContext = createContext(null);
 
@@ -14,6 +15,7 @@ export function DataProvider({ children }) {
   const [jewelryItogi, setJewelryItogi] = useState([]);     // ЮИ Итоги (СПБ и БЕЛ)
   const [jewelryUnexposed, setJewelryUnexposed] = useState([]); // Невыставленный товар
   const [capsuleFiles, setCapsuleFiles] = useState([]);    // Капсулы
+  const [pricingFiles, setPricingFiles] = useState([]);    // Цены на полупарах
 
   const loadFiles = useCallback(async (fileList) => {
     setLoading(true);
@@ -27,11 +29,13 @@ export function DataProvider({ children }) {
         return n.includes('юи') || n.includes('ювелир') || n.includes('невыставленн');
       };
       const isCapsule   = f => f.name.toLowerCase().includes('капсул');
-      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f);
+      const isPricing   = f => f.name.toLowerCase().includes('полупарк') || f.name.toLowerCase().includes('переоценк');
+      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f) && !isPricing(f);
 
       const scanList    = all.filter(isScanning);
       const jewelryList = all.filter(isJewelry);
       const capsuleList = all.filter(isCapsule);
+      const pricingList = all.filter(isPricing);
       const reportList  = all.filter(isReport);
 
       if (reportList.length > 0) {
@@ -50,6 +54,10 @@ export function DataProvider({ children }) {
       if (capsuleList.length > 0) {
         const capsuleResults = await parseCapsuleFiles(capsuleList);
         if (capsuleResults.length > 0) setCapsuleFiles(capsuleResults);
+      }
+      if (pricingList.length > 0) {
+        const pricingResults = await parsePricingFiles(pricingList);
+        if (pricingResults.length > 0) setPricingFiles(pricingResults);
       }
     } catch (err) {
       setError(err.message || 'Ошибка при загрузке файлов');
@@ -133,6 +141,10 @@ export function DataProvider({ children }) {
     || capsuleFiles.find(f => f.fileRegion === 'ALL')
     || null;
 
+  // Pricing helpers
+  const spbPricing = pricingFiles.find(f => f.fileRegion === 'СПБ') || null;
+  const belPricing = pricingFiles.find(f => f.fileRegion === 'БЕЛ') || null;
+
   return (
     <DataContext.Provider value={{
       parsedFiles,
@@ -165,6 +177,9 @@ export function DataProvider({ children }) {
       capsuleFiles,
       spbCapsule,
       belCapsule,
+      pricingFiles,
+      spbPricing,
+      belPricing,
     }}>
       {children}
     </DataContext.Provider>

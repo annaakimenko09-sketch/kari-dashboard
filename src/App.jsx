@@ -17,6 +17,8 @@ import JewelrySpbPage    from './pages/JewelrySpbPage';
 import JewelryBelPage    from './pages/JewelryBelPage';
 import CapsuleSpbPage    from './pages/CapsuleSpbPage';
 import CapsuleBelPage    from './pages/CapsuleBelPage';
+import PricingSpbPage    from './pages/PricingSpbPage';
+import PricingBelPage    from './pages/PricingBelPage';
 import UploadPage         from './pages/UploadPage';
 
 export default function App() {
@@ -55,6 +57,10 @@ export default function App() {
                 {/* Капсулы */}
                 <Route path="capsule/spb" element={<ErrorBoundary><CapsuleSpbPage /></ErrorBoundary>} />
                 <Route path="capsule/bel" element={<ErrorBoundary><CapsuleBelPage /></ErrorBoundary>} />
+
+                {/* Цены на полупарах */}
+                <Route path="pricing/spb" element={<ErrorBoundary><PricingSpbPage /></ErrorBoundary>} />
+                <Route path="pricing/bel" element={<ErrorBoundary><PricingBelPage /></ErrorBoundary>} />
 
                 {/* Загрузка */}
                 <Route path="upload"       element={<ErrorBoundary><UploadPage /></ErrorBoundary>} />
