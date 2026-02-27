@@ -21,6 +21,8 @@ import PricingSpbPage    from './pages/PricingSpbPage';
 import PricingBelPage    from './pages/PricingBelPage';
 import FillingSpbPage    from './pages/FillingSpbPage';
 import FillingBelPage    from './pages/FillingBelPage';
+import IZSpbPage        from './pages/IZSpbPage';
+import IZBelPage        from './pages/IZBelPage';
 import UploadPage         from './pages/UploadPage';
 
 export default function App() {
@@ -67,6 +69,10 @@ export default function App() {
                 {/* Наполненность обувь */}
                 <Route path="filling/spb" element={<ErrorBoundary><FillingSpbPage /></ErrorBoundary>} />
                 <Route path="filling/bel" element={<ErrorBoundary><FillingBelPage /></ErrorBoundary>} />
+
+                {/* Адресное ИЗ */}
+                <Route path="iz/spb" element={<ErrorBoundary><IZSpbPage /></ErrorBoundary>} />
+                <Route path="iz/bel" element={<ErrorBoundary><IZBelPage /></ErrorBoundary>} />
 
                 {/* Загрузка */}
                 <Route path="upload"       element={<ErrorBoundary><UploadPage /></ErrorBoundary>} />

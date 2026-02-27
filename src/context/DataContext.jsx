@@ -5,6 +5,7 @@ import { parseJewelryFiles } from '../utils/jewelryParser';
 import { parseCapsuleFiles } from '../utils/capsuleParser';
 import { parsePricingFiles } from '../utils/pricingParser';
 import { parseFillingFiles } from '../utils/fillingParser';
+import { parseIZFiles } from '../utils/izParser';
 
 const DataContext = createContext(null);
 
@@ -18,6 +19,7 @@ export function DataProvider({ children }) {
   const [capsuleFiles, setCapsuleFiles] = useState([]);    // Капсулы
   const [pricingFiles, setPricingFiles] = useState([]);    // Цены на полупарах
   const [fillingFiles, setFillingFiles] = useState([]);    // Наполненность обувь
+  const [izFiles, setIzFiles] = useState([]);              // Адресное ИЗ
 
   const loadFiles = useCallback(async (fileList) => {
     setLoading(true);
@@ -33,13 +35,15 @@ export function DataProvider({ children }) {
       const isCapsule   = f => f.name.toLowerCase().includes('капсул');
       const isPricing   = f => f.name.toLowerCase().includes('полупарк') || f.name.toLowerCase().includes('переоценк');
       const isFilling   = f => f.name.toLowerCase().includes('наполненност');
-      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f) && !isPricing(f) && !isFilling(f);
+      const isIZ        = f => f.name.toLowerCase().includes('интернет заказ');
+      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f) && !isPricing(f) && !isFilling(f) && !isIZ(f);
 
       const scanList    = all.filter(isScanning);
       const jewelryList = all.filter(isJewelry);
       const capsuleList = all.filter(isCapsule);
       const pricingList = all.filter(isPricing);
       const fillingList = all.filter(isFilling);
+      const izList      = all.filter(isIZ);
       const reportList  = all.filter(isReport);
 
       if (reportList.length > 0) {
@@ -66,6 +70,10 @@ export function DataProvider({ children }) {
       if (fillingList.length > 0) {
         const fillingResults = await parseFillingFiles(fillingList);
         if (fillingResults.length > 0) setFillingFiles(fillingResults);
+      }
+      if (izList.length > 0) {
+        const izResults = await parseIZFiles(izList);
+        if (izResults.length > 0) setIzFiles(izResults);
       }
     } catch (err) {
       setError(err.message || 'Ошибка при загрузке файлов');
@@ -161,6 +169,14 @@ export function DataProvider({ children }) {
     || fillingFiles.find(f => f.fileRegion === 'ALL')
     || null;
 
+  // IZ helpers
+  const spbIZ = izFiles.find(f => f.fileRegion === 'СПБ')
+    || izFiles.find(f => f.fileRegion === 'ALL')
+    || null;
+  const belIZ = izFiles.find(f => f.fileRegion === 'БЕЛ')
+    || izFiles.find(f => f.fileRegion === 'ALL')
+    || null;
+
   return (
     <DataContext.Provider value={{
       parsedFiles,
@@ -199,6 +215,9 @@ export function DataProvider({ children }) {
       fillingFiles,
       spbFilling,
       belFilling,
+      izFiles,
+      spbIZ,
+      belIZ,
     }}>
       {children}
     </DataContext.Provider>
