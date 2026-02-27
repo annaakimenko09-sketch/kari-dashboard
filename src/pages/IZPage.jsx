@@ -17,11 +17,8 @@ function fmtPct(v) {
   return v.toFixed(1) + '%';
 }
 
-// Gradient: low number = red (bad), high number = green (good)
-function gradientStyle(val, min, max) {
-  if (val === null || val === undefined || min === max) return {};
-  const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
-  // ratio=0 → red (bad/low), ratio=1 → green (good/high)
+// Compute RGB for gradient. ratio=0→red, ratio=1→green (higher=better)
+function computeRGB(ratio) {
   let r, g, b;
   if (ratio <= 0.5) {
     const t = ratio / 0.5;
@@ -34,30 +31,41 @@ function gradientStyle(val, min, max) {
     g = Math.round(138 + t * (163 - 138));
     b = Math.round(4   + t * (74  - 4));
   }
-  const lr = Math.round(r + (255 - r) * 0.35);
-  const lg = Math.round(g + (255 - g) * 0.35);
-  const lb = Math.round(b + (255 - b) * 0.35);
+  return [
+    Math.round(r + (255 - r) * 0.35),
+    Math.round(g + (255 - g) * 0.35),
+    Math.round(b + (255 - b) * 0.35),
+  ];
+}
+
+// scanShare: higher = better (green)
+function gradientStyleScan(val, min, max) {
+  if (val === null || val === undefined || min === max) return {};
+  const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
+  const [lr, lg, lb] = computeRGB(ratio);
   return { backgroundColor: `rgb(${lr},${lg},${lb})`, color: '#111827' };
 }
 
-function gradientHex(val, min, max) {
+// rating: lower = better (green), higher = worse (red) — invert ratio
+function gradientStyleRating(val, min, max) {
+  if (val === null || val === undefined || min === max) return {};
+  const ratio = 1 - Math.max(0, Math.min(1, (val - min) / (max - min)));
+  const [lr, lg, lb] = computeRGB(ratio);
+  return { backgroundColor: `rgb(${lr},${lg},${lb})`, color: '#111827' };
+}
+
+function gradientHexScan(val, min, max) {
   if (val === null || val === undefined || min === max) return { bg: 'FFFFFF', fg: '111827' };
   const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
-  let r, g, b;
-  if (ratio <= 0.5) {
-    const t = ratio / 0.5;
-    r = Math.round(220 + t * (202 - 220));
-    g = Math.round(38  + t * (138 - 38));
-    b = Math.round(38  + t * (4   - 38));
-  } else {
-    const t = (ratio - 0.5) / 0.5;
-    r = Math.round(202 + t * (22 - 202));
-    g = Math.round(138 + t * (163 - 138));
-    b = Math.round(4   + t * (74  - 4));
-  }
-  const lr = Math.round(r + (255 - r) * 0.35);
-  const lg = Math.round(g + (255 - g) * 0.35);
-  const lb = Math.round(b + (255 - b) * 0.35);
+  const [lr, lg, lb] = computeRGB(ratio);
+  const toHex = v => v.toString(16).padStart(2, '0').toUpperCase();
+  return { bg: toHex(lr) + toHex(lg) + toHex(lb), fg: '111827' };
+}
+
+function gradientHexRating(val, min, max) {
+  if (val === null || val === undefined || min === max) return { bg: 'FFFFFF', fg: '111827' };
+  const ratio = 1 - Math.max(0, Math.min(1, (val - min) / (max - min)));
+  const [lr, lg, lb] = computeRGB(ratio);
   const toHex = v => v.toString(16).padStart(2, '0').toUpperCase();
   return { bg: toHex(lr) + toHex(lg) + toHex(lb), fg: '111827' };
 }
@@ -103,7 +111,7 @@ function DataTable({ rows, columns, scales, sortField, sortDir, onSort }) {
                 if (col.key === 'rating') {
                   return (
                     <td key={col.key} className="px-3 py-2 text-center font-semibold"
-                      style={gradientStyle(row.rating, scales.ratingMin, scales.ratingMax)}>
+                      style={gradientStyleRating(row.rating, scales.ratingMin, scales.ratingMax)}>
                       {fmtNum(row.rating)}
                     </td>
                   );
@@ -111,7 +119,7 @@ function DataTable({ rows, columns, scales, sortField, sortDir, onSort }) {
                 if (col.key === 'scanShare') {
                   return (
                     <td key={col.key} className="px-3 py-2 text-center font-semibold"
-                      style={gradientStyle(row.scanShare, scales.scanMin, scales.scanMax)}>
+                      style={gradientStyleScan(row.scanShare, scales.scanMin, scales.scanMax)}>
                       {fmtPct(row.scanShare)}
                     </td>
                   );
@@ -143,6 +151,7 @@ export default function IZPage({ region }) {
   const data = region === 'СПБ' ? spbIZ : belIZ;
 
   const [activeSheet, setActiveSheet] = useState('День');
+  const [activeView, setActiveView] = useState('regions'); // 'regions' | 'subdivs' | 'stores'
   const [subdivFilter, setSubdivFilter] = useState('');
   const [storeFilter, setStoreFilter] = useState('');
   const [sortField, setSortField] = useState('rating');
@@ -260,10 +269,10 @@ export default function IZPage({ region }) {
           const addr = XLSX.utils.encode_cell({ r: ri + 1, c: ci });
           if (!ws[addr]) continue;
           if (ci === ratingIdx) {
-            const { bg, fg } = gradientHex(rows[ri].rating, scales.ratingMin, scales.ratingMax);
+            const { bg, fg } = gradientHexRating(rows[ri].rating, scales.ratingMin, scales.ratingMax);
             ws[addr].s = { fill: { fgColor: { rgb: bg } }, font: { color: { rgb: fg } }, alignment: { horizontal: 'center', vertical: 'center' } };
           } else if (ci === scanIdx) {
-            const { bg, fg } = gradientHex(rows[ri].scanShare, scales.scanMin, scales.scanMax);
+            const { bg, fg } = gradientHexScan(rows[ri].scanShare, scales.scanMin, scales.scanMax);
             ws[addr].s = { fill: { fgColor: { rgb: bg } }, font: { color: { rgb: fg } }, alignment: { horizontal: 'center', vertical: 'center' } };
             if (typeof ws[addr].v === 'number') { ws[addr].t = 'n'; ws[addr].z = '0.0%'; }
           } else {
@@ -328,7 +337,7 @@ export default function IZPage({ region }) {
         </button>
       </div>
 
-      {/* Sheet tabs */}
+      {/* Period tabs (День / Неделя / Месяц) */}
       <div className="flex gap-1">
         {SHEET_NAMES.map(name => (
           <button
@@ -344,71 +353,85 @@ export default function IZPage({ region }) {
         ))}
       </div>
 
-      {/* Regions table */}
-      {activeSheetData.regions.length > 0 && (
-        <div>
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Регионы</h2>
-          <DataTable
-            rows={activeSheetData.regions}
-            columns={REGION_COLS}
-            scales={regionScales}
-          />
-        </div>
-      )}
-
-      {/* Subdivisions table */}
-      {activeSheetData.subdivs.length > 0 && (
-        <div>
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Подразделения</h2>
-          <DataTable
-            rows={activeSheetData.subdivs}
-            columns={SUBDIV_COLS}
-            scales={subdivScales}
-          />
-        </div>
-      )}
-
-      {/* Stores: filters + table */}
-      <div>
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Магазины</h2>
-
-        <div className="flex flex-wrap gap-2 items-center mb-3">
-          <select
-            className={SELECT_CLS}
-            value={subdivFilter}
-            onChange={e => { setSubdivFilter(e.target.value); setStoreFilter(''); }}
+      {/* View tabs (Регионы / Подразделения / Магазины) */}
+      <div className="flex gap-1 border-b border-gray-200 pb-0">
+        {[
+          { key: 'regions',  label: 'Регионы' },
+          { key: 'subdivs',  label: 'Подразделения' },
+          { key: 'stores',   label: 'Магазины' },
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveView(tab.key)}
+            className={`px-4 py-2 text-xs font-semibold transition-colors border-b-2 -mb-px ${
+              activeView === tab.key
+                ? 'border-[#0891b2] text-[#0891b2]'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
           >
-            <option value="">Все подразделения</option>
-            {subdivOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select
-            className={SELECT_CLS}
-            value={storeFilter}
-            onChange={e => setStoreFilter(e.target.value)}
-          >
-            <option value="">Все магазины</option>
-            {storeOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          {(subdivFilter || storeFilter) && (
-            <button
-              className="text-xs text-gray-400 hover:text-gray-600 underline"
-              onClick={() => { setSubdivFilter(''); setStoreFilter(''); }}
-            >
-              Сбросить
-            </button>
-          )}
-          <span className="text-xs text-gray-400 ml-auto">{filteredSorted.length} магазинов</span>
-        </div>
-
-        <DataTable
-          rows={filteredSorted}
-          columns={STORE_COLS}
-          scales={storeScales}
-          sortField={sortField}
-          sortDir={sortDir}
-          onSort={toggleSort}
-        />
+            {tab.label}
+          </button>
+        ))}
       </div>
+
+      {/* Regions */}
+      {activeView === 'regions' && (
+        <DataTable
+          rows={activeSheetData.regions}
+          columns={REGION_COLS}
+          scales={regionScales}
+        />
+      )}
+
+      {/* Subdivisions */}
+      {activeView === 'subdivs' && (
+        <DataTable
+          rows={activeSheetData.subdivs}
+          columns={SUBDIV_COLS}
+          scales={subdivScales}
+        />
+      )}
+
+      {/* Stores */}
+      {activeView === 'stores' && (
+        <div>
+          <div className="flex flex-wrap gap-2 items-center mb-3">
+            <select
+              className={SELECT_CLS}
+              value={subdivFilter}
+              onChange={e => { setSubdivFilter(e.target.value); setStoreFilter(''); }}
+            >
+              <option value="">Все подразделения</option>
+              {subdivOptions.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select
+              className={SELECT_CLS}
+              value={storeFilter}
+              onChange={e => setStoreFilter(e.target.value)}
+            >
+              <option value="">Все магазины</option>
+              {storeOptions.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            {(subdivFilter || storeFilter) && (
+              <button
+                className="text-xs text-gray-400 hover:text-gray-600 underline"
+                onClick={() => { setSubdivFilter(''); setStoreFilter(''); }}
+              >
+                Сбросить
+              </button>
+            )}
+            <span className="text-xs text-gray-400 ml-auto">{filteredSorted.length} магазинов</span>
+          </div>
+          <DataTable
+            rows={filteredSorted}
+            columns={STORE_COLS}
+            scales={storeScales}
+            sortField={sortField}
+            sortDir={sortDir}
+            onSort={toggleSort}
+          />
+        </div>
+      )}
     </div>
   );
 }
