@@ -24,10 +24,14 @@ const sections = [
     label: 'Продажи',
     color: '#E91E8C',
     items: [
-      { path: '/sales/day/spb',   label: 'День СПБ',   icon: BarChart2 },
-      { path: '/sales/day/bel',   label: 'День БЕЛ',   icon: BarChart2 },
-      { path: '/sales/month/spb', label: 'Месяц СПБ',  icon: BarChart2 },
-      { path: '/sales/month/bel', label: 'Месяц БЕЛ',  icon: BarChart2 },
+      { path: '/sales/day/spb',       label: 'День СПБ',       icon: BarChart2 },
+      { path: '/sales/day/bel',       label: 'День БЕЛ',       icon: BarChart2 },
+      { path: '/sales/month/spb',     label: 'Месяц СПБ',      icon: BarChart2 },
+      { path: '/sales/month/bel',     label: 'Месяц БЕЛ',      icon: BarChart2 },
+      { path: '/sales/yui/day/spb',   label: 'День ЮИ СПБ',    icon: BarChart2 },
+      { path: '/sales/yui/day/bel',   label: 'День ЮИ БЕЛ',    icon: BarChart2 },
+      { path: '/sales/yui/month/spb', label: 'Месяц ЮИ СПБ',   icon: BarChart2 },
+      { path: '/sales/yui/month/bel', label: 'Месяц ЮИ БЕЛ',   icon: BarChart2 },
     ],
   },
   {

@@ -7,6 +7,7 @@ import { parsePricingFiles } from '../utils/pricingParser';
 import { parseFillingFiles } from '../utils/fillingParser';
 import { parseIZFiles } from '../utils/izParser';
 import { parseSalesFiles } from '../utils/salesParser';
+import { parseSalesYuiFiles } from '../utils/salesYuiParser';
 
 const DataContext = createContext(null);
 
@@ -22,6 +23,7 @@ export function DataProvider({ children }) {
   const [fillingFiles, setFillingFiles] = useState([]);    // Наполненность обувь
   const [izFiles, setIzFiles] = useState([]);              // Адресное ИЗ
   const [salesFiles, setSalesFiles] = useState([]);        // Продажи
+  const [salesYuiFiles, setSalesYuiFiles] = useState([]);  // Продажи ЮИ
 
   const loadFiles = useCallback(async (fileList) => {
     setLoading(true);
@@ -43,7 +45,13 @@ export function DataProvider({ children }) {
         return (n.startsWith('ДЕНЬ_') || n.startsWith('МЕСЯЦ_')) &&
           (n.includes('СПБ') || n.includes('БЕЛ'));
       };
-      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f) && !isPricing(f) && !isFilling(f) && !isIZ(f) && !isSales(f);
+      // ЮИ files: start with ДЕНЬ or МЕСЯЦ but NO СПБ/БЕЛ in name
+      const isSalesYui  = f => {
+        const n = f.name.toUpperCase();
+        return (n.startsWith('ДЕНЬ') || n.startsWith('МЕСЯЦ')) &&
+          !n.includes('СПБ') && !n.includes('БЕЛ') && !n.includes('SPB') && !n.includes('BEL');
+      };
+      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f) && !isPricing(f) && !isFilling(f) && !isIZ(f) && !isSales(f) && !isSalesYui(f);
 
       const scanList    = all.filter(isScanning);
       const jewelryList = all.filter(isJewelry);
@@ -51,8 +59,9 @@ export function DataProvider({ children }) {
       const pricingList = all.filter(isPricing);
       const fillingList = all.filter(isFilling);
       const izList      = all.filter(isIZ);
-      const salesList   = all.filter(isSales);
-      const reportList  = all.filter(isReport);
+      const salesList    = all.filter(isSales);
+      const salesYuiList = all.filter(isSalesYui);
+      const reportList   = all.filter(isReport);
 
       if (reportList.length > 0) {
         const results = await parseExcelFiles(reportList);
@@ -86,6 +95,10 @@ export function DataProvider({ children }) {
       if (salesList.length > 0) {
         const salesResults = await parseSalesFiles(salesList);
         if (salesResults.length > 0) setSalesFiles(salesResults);
+      }
+      if (salesYuiList.length > 0) {
+        const salesYuiResults = await parseSalesYuiFiles(salesYuiList);
+        if (salesYuiResults.length > 0) setSalesYuiFiles(salesYuiResults);
       }
     } catch (err) {
       setError(err.message || 'Ошибка при загрузке файлов');
@@ -195,6 +208,12 @@ export function DataProvider({ children }) {
   const spbSalesMonth = salesFiles.find(f => f.fileRegion === 'СПБ' && f.filePeriod === 'МЕСЯЦ')  || null;
   const belSalesMonth = salesFiles.find(f => f.fileRegion === 'БЕЛ' && f.filePeriod === 'МЕСЯЦ')  || null;
 
+  // Sales ЮИ helpers
+  const spbSalesYuiDay   = salesYuiFiles.find(f => f.fileRegion === 'СПБ' && f.filePeriod === 'ДЕНЬ')   || null;
+  const belSalesYuiDay   = salesYuiFiles.find(f => f.fileRegion === 'БЕЛ' && f.filePeriod === 'ДЕНЬ')   || null;
+  const spbSalesYuiMonth = salesYuiFiles.find(f => f.fileRegion === 'СПБ' && f.filePeriod === 'МЕСЯЦ')  || null;
+  const belSalesYuiMonth = salesYuiFiles.find(f => f.fileRegion === 'БЕЛ' && f.filePeriod === 'МЕСЯЦ')  || null;
+
   return (
     <DataContext.Provider value={{
       parsedFiles,
@@ -241,6 +260,11 @@ export function DataProvider({ children }) {
       belSalesDay,
       spbSalesMonth,
       belSalesMonth,
+      salesYuiFiles,
+      spbSalesYuiDay,
+      belSalesYuiDay,
+      spbSalesYuiMonth,
+      belSalesYuiMonth,
     }}>
       {children}
     </DataContext.Provider>
