@@ -9,11 +9,24 @@ const SKIP_SUBDIVS = new Set([0, 2, 3, 4]);     // hide A, C, D, E  → only П�
 const SKIP_STORES  = new Set([0, 2]);            // hide A, C
 
 // ─── Gradient helpers ──────────────────────────────────────────────────────────
+// Pastel scale: red(248,105,107) → white(255,255,255) → green(99,190,123)
+// ratio 0 = red, 0.5 = white, 1 = green
 function computeRGB(ratio) {
-  // ratio 0 → red, ratio 1 → green
-  const r = Math.round(255 * (1 - ratio));
-  const g = Math.round(200 * ratio);
-  const b = 60;
+  const RED   = [248, 105, 107];
+  const WHITE = [255, 255, 255];
+  const GREEN = [99,  190, 123];
+  let r, g, b;
+  if (ratio <= 0.5) {
+    const t = ratio / 0.5;
+    r = Math.round(RED[0] + (WHITE[0] - RED[0]) * t);
+    g = Math.round(RED[1] + (WHITE[1] - RED[1]) * t);
+    b = Math.round(RED[2] + (WHITE[2] - RED[2]) * t);
+  } else {
+    const t = (ratio - 0.5) / 0.5;
+    r = Math.round(WHITE[0] + (GREEN[0] - WHITE[0]) * t);
+    g = Math.round(WHITE[1] + (GREEN[1] - WHITE[1]) * t);
+    b = Math.round(WHITE[2] + (GREEN[2] - WHITE[2]) * t);
+  }
   return [r, g, b];
 }
 
@@ -22,7 +35,7 @@ function gradientStyle(val, min, max, invert) {
   let ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
   if (invert) ratio = 1 - ratio;
   const [r, g, b] = computeRGB(ratio);
-  return { backgroundColor: `rgb(${r},${g},${b})`, color: '#111827' };
+  return { backgroundColor: `rgb(${r},${g},${b})`, color: '#1f2937', fontWeight: '500' };
 }
 
 function gradientHex(val, min, max, invert) {
@@ -106,8 +119,8 @@ function SortableTable({ rows, headers, skipCols, showFilters = false, filterSta
               <th
                 key={i}
                 onClick={() => handleSort(h)}
-                className="px-2 py-1.5 text-left font-semibold text-gray-600 cursor-pointer select-none whitespace-nowrap hover:bg-gray-100"
-                style={{ fontSize: '11px' }}
+                className="px-2 py-1.5 text-center font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100"
+                style={{ fontSize: '11px', maxWidth: '80px', wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.2', verticalAlign: 'bottom' }}
               >
                 {h}
                 {sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
@@ -148,7 +161,7 @@ function SortableTable({ rows, headers, skipCols, showFilters = false, filterSta
                   }
                 }
                 return (
-                  <td key={i} className="px-2 py-1 whitespace-nowrap" style={style}>
+                  <td key={i} className="px-2 py-1 text-center" style={{ ...style, fontSize: '11px' }}>
                     {fmtVal(row[h])}
                   </td>
                 );
