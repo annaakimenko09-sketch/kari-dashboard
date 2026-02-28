@@ -8,11 +8,31 @@ const SKIP_REGIONS = new Set([1, 2, 3, 4]);     // hide B, C, D, E — only Ре
 const SKIP_SUBDIVS = new Set([0, 2, 3, 4]);     // hide A, C, D, E — only Подразделение + metrics
 const SKIP_STORES  = new Set([0, 2]);            // hide A, C
 
+// Which visible column index (after filtering skips) is sticky per view
+// Регионы: col A (Регион) → first visible col (visIdx 0)
+// Подразделения: col B (Подразделение) → first visible col (visIdx 0)
+// Магазины: col E (ТЦ, ci=4) → third visible col (visIdx 2, after B=1 and D=3)
+const STICKY_COL_CI = {
+  regions: 0,   // A — Регион
+  subdivs: 1,   // B — Подразделение
+  stores:  4,   // E — ТЦ
+};
+
 // ─── Percent column detection ──────────────────────────────────────────────────
 // Headers whose values are stored as decimals (0.74 = 74%) and should display as %
+const PERCENT_EXACT = new Set([
+  'КОП',
+  'КОП обувь',
+  'ТО расширения',
+  'Штук в чеке к неделе',
+  'ТО ЮИ / ТО',
+  'Утилизация списания',
+]);
+
 function isPercentHeader(h) {
   if (!h) return false;
   if (h.includes('%')) return true;
+  if (PERCENT_EXACT.has(h)) return true;
   // LFL / YTY / growth / share columns are all decimal ratios
   return /LFL|YTY|Рост|Доля/.test(h);
 }
@@ -97,7 +117,17 @@ function fmtVal(v, header) {
 }
 
 // ─── SortableTable ─────────────────────────────────────────────────────────────
-function SortableTable({ rows, headers, skipCols, showFilters = false, filterState = {}, onFilterChange, skipFirstGradientForCols }) {
+function SortableTable({
+  rows,
+  headers,
+  skipCols,
+  showFilters = false,
+  filterState = {},
+  onFilterChange,
+  skipFirstGradientForCols,
+  stickyColCi,         // ci of the column to freeze (sticky left)
+  subdivOptions = [],  // dropdown options for Подразделение filter in Магазины
+}) {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
 
@@ -133,44 +163,86 @@ function SortableTable({ rows, headers, skipCols, showFilters = false, filterSta
     });
   }, [rows, sortField, sortDir]);
 
-  // Which visible columns show filter inputs (text/string cols only: ci 0–4)
-  const textColIndices = new Set(
-    headers.map((_, ci) => ci).filter(ci => !skipCols.has(ci) && ci <= 4)
-  );
+  // Подразделение header name (ci=1)
+  const subdivHeader = headers[1] || '';
 
   return (
     <div className="overflow-x-auto">
       <table className="text-xs w-full border-collapse" style={{ tableLayout: 'auto', minWidth: '600px' }}>
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
-            {visibleHeaders.map((h, i) => (
-              <th
-                key={i}
-                onClick={() => handleSort(h)}
-                className="px-2 py-1.5 text-center font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100"
-                style={{ fontSize: '11px', width: '70px', minWidth: '50px', maxWidth: '90px', verticalAlign: 'bottom', padding: '4px' }}
-              >
-                <div style={{
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                  lineHeight: '1.25',
-                  wordBreak: 'break-word',
-                  whiteSpace: 'normal',
-                }}>
-                  {h}{sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
-                </div>
-              </th>
-            ))}
+            {visibleHeaders.map((h, i) => {
+              const ci = headers.indexOf(h);
+              const isSticky = ci === stickyColCi;
+              return (
+                <th
+                  key={i}
+                  onClick={() => handleSort(h)}
+                  className="px-2 py-1.5 text-center font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100"
+                  style={{
+                    fontSize: '11px',
+                    width: '70px',
+                    minWidth: '50px',
+                    maxWidth: isSticky ? '120px' : '90px',
+                    verticalAlign: 'bottom',
+                    padding: '4px',
+                    ...(isSticky ? {
+                      position: 'sticky',
+                      left: 0,
+                      zIndex: 3,
+                      backgroundColor: '#f9fafb',
+                      boxShadow: '2px 0 4px rgba(0,0,0,0.08)',
+                    } : {}),
+                  }}
+                >
+                  <div style={{
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                    lineHeight: '1.25',
+                  }}>
+                    {h}{sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                  </div>
+                </th>
+              );
+            })}
           </tr>
           {showFilters && (
             <tr className="bg-gray-50 border-b border-gray-200">
               {visibleHeaders.map((h, i) => {
                 const ci = headers.indexOf(h);
-                if (!textColIndices.has(ci)) return <th key={i} className="px-1 py-0.5" />;
+                const isSticky = ci === stickyColCi;
+                const isTextCol = ci <= 4;
+                const isSubdivCol = h === subdivHeader && subdivOptions.length > 0;
+
+                const stickyStyle = isSticky ? {
+                  position: 'sticky',
+                  left: 0,
+                  zIndex: 3,
+                  backgroundColor: '#f9fafb',
+                  boxShadow: '2px 0 4px rgba(0,0,0,0.08)',
+                } : {};
+
+                if (!isTextCol) return <th key={i} className="px-1 py-0.5" style={stickyStyle} />;
+
+                if (isSubdivCol) {
+                  return (
+                    <th key={i} className="px-1 py-0.5" style={stickyStyle}>
+                      <select
+                        value={filterState[h] || ''}
+                        onChange={e => onFilterChange(h, e.target.value)}
+                        className="w-full text-xs px-1 py-0.5 border border-gray-300 rounded bg-white"
+                      >
+                        <option value="">Все</option>
+                        {subdivOptions.map(opt => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    </th>
+                  );
+                }
+
                 return (
-                  <th key={i} className="px-1 py-0.5">
+                  <th key={i} className="px-1 py-0.5" style={stickyStyle}>
                     <input
                       type="text"
                       value={filterState[h] || ''}
@@ -190,6 +262,7 @@ function SortableTable({ rows, headers, skipCols, showFilters = false, filterSta
               {visibleHeaders.map((h, i) => {
                 const ci = headers.indexOf(h);
                 const val = row[`_c${ci}`];
+                const isSticky = ci === stickyColCi;
                 let style = {};
                 // For row index 0 in regions (Итого по Kari): skip gradient on ТО руб (ci=5)
                 const isFirstRow = ri === 0;
@@ -200,7 +273,21 @@ function SortableTable({ rows, headers, skipCols, showFilters = false, filterSta
                   }
                 }
                 return (
-                  <td key={i} className="px-2 py-1 text-center" style={{ ...style, fontSize: '11px' }}>
+                  <td
+                    key={i}
+                    className="px-2 py-1 text-center"
+                    style={{
+                      ...style,
+                      fontSize: '11px',
+                      ...(isSticky ? {
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 1,
+                        backgroundColor: style.backgroundColor || '#ffffff',
+                        boxShadow: '2px 0 4px rgba(0,0,0,0.08)',
+                      } : {}),
+                    }}
+                  >
                     {fmtVal(row[h], h)}
                   </td>
                 );
@@ -303,6 +390,17 @@ export default function SalesPage({ fileData, title }) {
   const { headers, stores, subdivs, regions, periods } = fileData;
   const periodInfo = periods && periods.length > 0 ? periods[0] : '';
 
+  // Unique subdivision values for dropdown in Магазины tab
+  // Подразделение is at ci=1, header name = headers[1]
+  const subdivHeader = headers[1] || '';
+  const subdivOptions = useMemo(() => {
+    if (!stores || !subdivHeader) return [];
+    const vals = stores
+      .map(r => r[subdivHeader])
+      .filter(v => v !== null && v !== undefined && String(v).trim() !== '');
+    return [...new Set(vals)].sort((a, b) => String(a).localeCompare(String(b), 'ru'));
+  }, [stores, subdivHeader]);
+
   const filteredStores = useMemo(() => {
     return (stores || []).filter(row =>
       Object.entries(storeFilters).every(([h, val]) => {
@@ -376,6 +474,7 @@ export default function SalesPage({ fileData, title }) {
             headers={headers}
             skipCols={SKIP_REGIONS}
             skipFirstGradientForCols={REGIONS_SKIP_FIRST_GRAD}
+            stickyColCi={STICKY_COL_CI.regions}
           />
         )}
         {activeView === 'subdivs' && (
@@ -386,6 +485,7 @@ export default function SalesPage({ fileData, title }) {
             showFilters={true}
             filterState={subdivFilters}
             onFilterChange={(h, v) => setSubdivFilters(prev => ({ ...prev, [h]: v }))}
+            stickyColCi={STICKY_COL_CI.subdivs}
           />
         )}
         {activeView === 'stores' && (
@@ -396,6 +496,8 @@ export default function SalesPage({ fileData, title }) {
             showFilters={true}
             filterState={storeFilters}
             onFilterChange={(h, v) => setStoreFilters(prev => ({ ...prev, [h]: v }))}
+            stickyColCi={STICKY_COL_CI.stores}
+            subdivOptions={subdivOptions}
           />
         )}
       </div>
