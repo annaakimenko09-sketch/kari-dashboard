@@ -78,15 +78,31 @@ function gradientHex(val, min, max, invert) {
   return ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0').toUpperCase();
 }
 
-function computeScales(rows, headers, skipFirstForCols = new Set()) {
+function percentile(sorted, p) {
+  if (sorted.length === 0) return 0;
+  const idx = (p / 100) * (sorted.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.min(lo + 1, sorted.length - 1);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
+
+function computeScales(rows, headers, excludeKari = false) {
   const scales = {};
+  const scaleRows = excludeKari
+    ? rows.filter(r => {
+        const name = String(r['_c0'] || '').toLowerCase();
+        return !name.includes('kari') && !name.includes('кари');
+      })
+    : rows;
   headers.forEach((_, ci) => {
-    const sourceRows = skipFirstForCols.has(ci) ? rows.slice(1) : rows;
-    const vals = sourceRows
+    const vals = scaleRows
       .map(r => r[`_c${ci}`])
-      .filter(v => v !== null && v !== undefined && typeof v === 'number');
+      .filter(v => v !== null && v !== undefined && typeof v === 'number')
+      .sort((a, b) => a - b);
     if (vals.length === 0) return;
-    scales[ci] = { min: Math.min(...vals), max: Math.max(...vals) };
+    const p5  = percentile(vals, 5);
+    const p95 = percentile(vals, 95);
+    scales[ci] = { min: p5, max: p95 };
   });
   return scales;
 }
@@ -119,13 +135,14 @@ function SortableTable({
   skipFirstGradientForCols,
   stickyColCi,
   subdivOptions = [],
+  excludeKariFromScales = false,
 }) {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
 
   const scales = useMemo(
-    () => computeScales(rows, headers, skipFirstGradientForCols || new Set()),
-    [rows, headers, skipFirstGradientForCols]
+    () => computeScales(rows, headers, excludeKariFromScales),
+    [rows, headers, excludeKariFromScales]
   );
 
   function handleSort(h) {
@@ -252,42 +269,45 @@ function SortableTable({
           )}
         </thead>
         <tbody>
-          {sorted.map((row, ri) => (
-            <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">
-              {visibleHeaders.map((h, i) => {
-                const ci = headers.indexOf(h);
-                const val = row[`_c${ci}`];
-                const isSticky = ci === stickyColCi;
-                let style = {};
-                const isFirstRow = ri === 0;
-                const skipGrad = isFirstRow && skipFirstGradientForCols && skipFirstGradientForCols.has(ci);
-                if (!skipGrad && typeof val === 'number' && scales[ci]) {
-                  if (COLS_HIGH_GOOD.has(ci) || COLS_HIGH_BAD.has(ci)) {
-                    style = gradientStyle(val, scales[ci].min, scales[ci].max, COLS_HIGH_BAD.has(ci));
+          {sorted.map((row, ri) => {
+            const rowName = String(row['_c0'] || '').toLowerCase();
+            const isKariRow = rowName.includes('kari') || rowName.includes('кари');
+            return (
+              <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">
+                {visibleHeaders.map((h, i) => {
+                  const ci = headers.indexOf(h);
+                  const val = row[`_c${ci}`];
+                  const isSticky = ci === stickyColCi;
+                  let gradBg = null;
+                  if (!isKariRow && typeof val === 'number' && scales[ci]) {
+                    if (COLS_HIGH_GOOD.has(ci) || COLS_HIGH_BAD.has(ci)) {
+                      const gs = gradientStyle(val, scales[ci].min, scales[ci].max, COLS_HIGH_BAD.has(ci));
+                      gradBg = gs.backgroundColor;
+                    }
                   }
-                }
-                return (
-                  <td
-                    key={i}
-                    className="px-2 py-1 text-center"
-                    style={{
-                      ...style,
-                      fontSize: '11px',
-                      ...(isSticky ? {
-                        position: 'sticky',
-                        left: 0,
-                        zIndex: 1,
-                        backgroundColor: style.backgroundColor || '#ffffff',
-                        boxShadow: '2px 0 4px rgba(0,0,0,0.08)',
-                      } : {}),
-                    }}
-                  >
-                    {fmtVal(row[h], h)}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+                  return (
+                    <td
+                      key={i}
+                      className="px-2 py-1 text-center"
+                      style={{
+                        fontSize: '11px',
+                        ...(gradBg && !isSticky ? { backgroundColor: gradBg, color: '#1f2937', fontWeight: '500' } : {}),
+                        ...(isSticky ? {
+                          position: 'sticky',
+                          left: 0,
+                          zIndex: 1,
+                          backgroundColor: '#ffffff',
+                          boxShadow: '2px 0 4px rgba(0,0,0,0.08)',
+                        } : {}),
+                      }}
+                    >
+                      {fmtVal(row[h], h)}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
           {sorted.length === 0 && (
             <tr>
               <td colSpan={visibleHeaders.length} className="px-4 py-8 text-center text-gray-400">
@@ -426,20 +446,21 @@ function exportToExcel(fileData, title, filteredStores) {
   const wb = XLSXStyle.utils.book_new();
 
   const views = [
-    { label: 'Регионы',       rows: fileData.regions,  skipCols: SKIP_REGIONS, skipFirstGrad: new Set([TO_RUB_CI]) },
-    { label: 'Подразделения', rows: fileData.subdivs,  skipCols: SKIP_SUBDIVS, skipFirstGrad: new Set() },
-    { label: 'Магазины',      rows: filteredStores,    skipCols: SKIP_STORES,  skipFirstGrad: new Set() },
+    { label: 'Регионы',       rows: fileData.regions,  skipCols: SKIP_REGIONS },
+    { label: 'Подразделения', rows: fileData.subdivs,  skipCols: SKIP_SUBDIVS },
+    { label: 'Магазины',      rows: filteredStores,    skipCols: SKIP_STORES  },
   ];
 
   const headers = fileData.headers;
 
-  views.forEach(({ label, rows, skipCols, skipFirstGrad }) => {
+  views.forEach(({ label, rows, skipCols }) => {
     if (!rows || rows.length === 0) return;
 
+    const isRegionsView = label === 'Регионы';
     const visHeaders = headers.filter((_, ci) => !skipCols.has(ci));
     const visIndices = headers.map((_, ci) => ci).filter(ci => !skipCols.has(ci));
 
-    const scales = computeScales(rows, headers, skipFirstGrad);
+    const scales = computeScales(rows, headers, isRegionsView);
 
     const wsData = [visHeaders];
     rows.forEach(row => {
@@ -467,11 +488,11 @@ function exportToExcel(fileData, title, filteredStores) {
         const row = rows[ri - 1];
         const val = row[`_c${ci}`];
         const invert = COLS_HIGH_BAD.has(ci);
+        const rowName = String(row['_c0'] || '').toLowerCase();
+        const isKariRow = rowName.includes('kari') || rowName.includes('кари');
         let bgHex = null;
-        if (typeof val === 'number' && scales[ci] && (COLS_HIGH_GOOD.has(ci) || COLS_HIGH_BAD.has(ci))) {
-          if (!(ri === 1 && skipFirstGrad.has(ci))) {
-            bgHex = gradientHex(val, scales[ci].min, scales[ci].max, invert);
-          }
+        if (!isKariRow && typeof val === 'number' && scales[ci] && (COLS_HIGH_GOOD.has(ci) || COLS_HIGH_BAD.has(ci))) {
+          bgHex = gradientHex(val, scales[ci].min, scales[ci].max, invert);
         }
 
         ws[cellAddr].s = {
@@ -490,8 +511,6 @@ function exportToExcel(fileData, title, filteredStores) {
 }
 
 // ─── Main SalesPage component ──────────────────────────────────────────────────
-const REGIONS_SKIP_FIRST_GRAD = new Set([TO_RUB_CI]);
-
 export default function SalesPage({ fileData, title }) {
   const [activeView, setActiveView] = useState('regions');
   const [storeFilters, setStoreFilters] = useState({});
@@ -602,8 +621,8 @@ export default function SalesPage({ fileData, title }) {
             rows={regions || []}
             headers={headers}
             skipCols={SKIP_REGIONS}
-            skipFirstGradientForCols={REGIONS_SKIP_FIRST_GRAD}
             stickyColCi={STICKY_COL_CI.regions}
+            excludeKariFromScales={true}
           />
         )}
         {activeView === 'subdivs' && (
