@@ -4,12 +4,21 @@ import { COLS_HIGH_GOOD, COLS_HIGH_BAD } from '../utils/salesParser';
 
 // Columns to hide per view (0-based indices matching Рег sheet headers)
 // A=0 Регион, B=1 Подразделение, C=2 (0/1 flag), D=3 Магазин, E=4 ТЦ
-const SKIP_REGIONS = new Set([1, 2, 3]);        // hide B, C, D
-const SKIP_SUBDIVS = new Set([0, 2, 3, 4]);     // hide A, C, D, E  → only Подразделение + metrics
+const SKIP_REGIONS = new Set([1, 2, 3, 4]);     // hide B, C, D, E — only Регион + metrics
+const SKIP_SUBDIVS = new Set([0, 2, 3, 4]);     // hide A, C, D, E — only Подразделение + metrics
 const SKIP_STORES  = new Set([0, 2]);            // hide A, C
 
+// ─── Percent column detection ──────────────────────────────────────────────────
+// Headers whose values are stored as decimals (0.74 = 74%) and should display as %
+function isPercentHeader(h) {
+  if (!h) return false;
+  if (h.includes('%')) return true;
+  // LFL / YTY / growth / share columns are all decimal ratios
+  return /LFL|YTY|Рост|Доля/.test(h);
+}
+
 // ─── Gradient helpers ──────────────────────────────────────────────────────────
-// Full Excel color scale: green(99,190,123) → yellow(255,235,132) → orange(255,167,83) → red(248,105,107)
+// Full Excel color scale: red → orange → yellow → green
 // ratio 0 = red (worst), ratio 1 = green (best)
 const COLOR_STOPS = [
   [248, 105, 107], // 0.00 red
@@ -49,11 +58,13 @@ function gradientHex(val, min, max, invert) {
   return ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0').toUpperCase();
 }
 
-// ─── Scale computation — per-column, from the rows being displayed ─────────────
-function computeScales(rows, headers) {
+// ─── Scale computation — per-column, per-view rows, excluding first "total" row ─
+// For Regions view: skip row index 0 (Итого по Kari) from gradient scale of ТО руб (ci=5)
+function computeScales(rows, headers, skipFirstForCols = new Set()) {
   const scales = {};
   headers.forEach((_, ci) => {
-    const vals = rows
+    const sourceRows = skipFirstForCols.has(ci) ? rows.slice(1) : rows;
+    const vals = sourceRows
       .map(r => r[`_c${ci}`])
       .filter(v => v !== null && v !== undefined && typeof v === 'number');
     if (vals.length === 0) return;
@@ -63,9 +74,22 @@ function computeScales(rows, headers) {
 }
 
 // ─── Format cell value for display ────────────────────────────────────────────
-function fmtVal(v) {
+// col index 5 = ТО руб. — integer, no decimal
+const TO_RUB_CI = 5;
+
+function fmtVal(v, header) {
   if (v === null || v === undefined || v === '') return '';
   if (typeof v === 'number') {
+    // ТО руб. — integer only
+    if (header === 'ТО руб.') {
+      return Math.round(v).toLocaleString('ru-RU');
+    }
+    // Percent columns — multiply by 100, show with % sign
+    if (isPercentHeader(header)) {
+      const pct = v * 100;
+      return pct.toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%';
+    }
+    // Default numeric
     if (Number.isInteger(v)) return v.toLocaleString('ru-RU');
     return v.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
   }
@@ -73,12 +97,15 @@ function fmtVal(v) {
 }
 
 // ─── SortableTable ─────────────────────────────────────────────────────────────
-function SortableTable({ rows, headers, skipCols, showFilters = false, filterState = {}, onFilterChange }) {
+function SortableTable({ rows, headers, skipCols, showFilters = false, filterState = {}, onFilterChange, skipFirstGradientForCols }) {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
 
-  // Compute scales from the rows passed in (per-view, per-column)
-  const scales = useMemo(() => computeScales(rows, headers), [rows, headers]);
+  // Compute scales — exclude row 0 from TO_RUB gradient if requested
+  const scales = useMemo(
+    () => computeScales(rows, headers, skipFirstGradientForCols || new Set()),
+    [rows, headers, skipFirstGradientForCols]
+  );
 
   function handleSort(h) {
     if (sortField === h) {
@@ -106,11 +133,9 @@ function SortableTable({ rows, headers, skipCols, showFilters = false, filterSta
     });
   }, [rows, sortField, sortDir]);
 
-  // Which visible columns should show filter inputs (string/text columns only)
+  // Which visible columns show filter inputs (text/string cols only: ci 0–4)
   const textColIndices = new Set(
-    headers
-      .map((_, ci) => ci)
-      .filter(ci => !skipCols.has(ci) && ci <= 4)
+    headers.map((_, ci) => ci).filter(ci => !skipCols.has(ci) && ci <= 4)
   );
 
   return (
@@ -123,7 +148,7 @@ function SortableTable({ rows, headers, skipCols, showFilters = false, filterSta
                 key={i}
                 onClick={() => handleSort(h)}
                 className="px-2 py-1.5 text-center font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100"
-                style={{ fontSize: '11px', width: '70px', minWidth: '50px', maxWidth: '90px', verticalAlign: 'bottom', padding: '4px 4px 4px 4px' }}
+                style={{ fontSize: '11px', width: '70px', minWidth: '50px', maxWidth: '90px', verticalAlign: 'bottom', padding: '4px' }}
               >
                 <div style={{
                   display: '-webkit-box',
@@ -166,15 +191,17 @@ function SortableTable({ rows, headers, skipCols, showFilters = false, filterSta
                 const ci = headers.indexOf(h);
                 const val = row[`_c${ci}`];
                 let style = {};
-                if (typeof val === 'number' && scales[ci]) {
-                  const invert = COLS_HIGH_BAD.has(ci);
+                // For row index 0 in regions (Итого по Kari): skip gradient on ТО руб (ci=5)
+                const isFirstRow = ri === 0;
+                const skipGrad = isFirstRow && skipFirstGradientForCols && skipFirstGradientForCols.has(ci);
+                if (!skipGrad && typeof val === 'number' && scales[ci]) {
                   if (COLS_HIGH_GOOD.has(ci) || COLS_HIGH_BAD.has(ci)) {
-                    style = gradientStyle(val, scales[ci].min, scales[ci].max, invert);
+                    style = gradientStyle(val, scales[ci].min, scales[ci].max, COLS_HIGH_BAD.has(ci));
                   }
                 }
                 return (
                   <td key={i} className="px-2 py-1 text-center" style={{ ...style, fontSize: '11px' }}>
-                    {fmtVal(row[h])}
+                    {fmtVal(row[h], h)}
                   </td>
                 );
               })}
@@ -198,27 +225,29 @@ function exportToExcel(fileData, title) {
   const wb = XLSXStyle.utils.book_new();
 
   const views = [
-    { label: 'Регионы',      rows: fileData.regions, skipCols: SKIP_REGIONS },
-    { label: 'Подразделения', rows: fileData.subdivs, skipCols: SKIP_SUBDIVS },
-    { label: 'Магазины',     rows: fileData.stores,  skipCols: SKIP_STORES  },
+    { label: 'Регионы',       rows: fileData.regions, skipCols: SKIP_REGIONS, skipFirstGrad: new Set([TO_RUB_CI]) },
+    { label: 'Подразделения', rows: fileData.subdivs, skipCols: SKIP_SUBDIVS, skipFirstGrad: new Set() },
+    { label: 'Магазины',      rows: fileData.stores,  skipCols: SKIP_STORES,  skipFirstGrad: new Set() },
   ];
 
   const headers = fileData.headers;
 
-  views.forEach(({ label, rows, skipCols }) => {
+  views.forEach(({ label, rows, skipCols, skipFirstGrad }) => {
     if (!rows || rows.length === 0) return;
 
     const visHeaders = headers.filter((_, ci) => !skipCols.has(ci));
     const visIndices = headers.map((_, ci) => ci).filter(ci => !skipCols.has(ci));
 
-    // Per-view, per-column scales
-    const scales = computeScales(rows, headers);
+    const scales = computeScales(rows, headers, skipFirstGrad);
 
     const wsData = [visHeaders];
     rows.forEach(row => {
       wsData.push(visHeaders.map(h => {
         const v = row[h];
-        return v !== null && v !== undefined ? v : '';
+        if (typeof v !== 'number') return v !== null && v !== undefined ? v : '';
+        if (h === 'ТО руб.') return Math.round(v);
+        if (isPercentHeader(h)) return parseFloat((v * 100).toFixed(1));
+        return v;
       }));
     });
 
@@ -231,16 +260,18 @@ function exportToExcel(fileData, title) {
         if (typeof val !== 'number') return;
         if (!scales[ci]) return;
         if (!COLS_HIGH_GOOD.has(ci) && !COLS_HIGH_BAD.has(ci)) return;
+        // Skip gradient for first row on excluded cols
+        if (ri === 1 && skipFirstGrad.has(ci)) return;
 
         const invert = COLS_HIGH_BAD.has(ci);
         const hex = gradientHex(val, scales[ci].min, scales[ci].max, invert);
         if (!hex) return;
 
         const cellAddr = XLSXStyle.utils.encode_cell({ r: ri, c: vci });
-        if (!ws[cellAddr]) ws[cellAddr] = { v: val, t: 'n' };
+        if (!ws[cellAddr]) ws[cellAddr] = { v: wsData[ri][vci], t: 'n' };
         ws[cellAddr].s = {
           fill: { patternType: 'solid', fgColor: { rgb: hex } },
-          font: { color: { rgb: '111827' } },
+          font: { color: { rgb: '1F2937' } },
           alignment: { horizontal: 'center' },
         };
       });
@@ -253,6 +284,9 @@ function exportToExcel(fileData, title) {
 }
 
 // ─── Main SalesPage component ──────────────────────────────────────────────────
+// Columns to exclude from gradient for row 0 (Итого по Kari) in Regions view
+const REGIONS_SKIP_FIRST_GRAD = new Set([TO_RUB_CI]); // ТО руб
+
 export default function SalesPage({ fileData, title }) {
   const [activeView, setActiveView] = useState('regions');
   const [storeFilters, setStoreFilters] = useState({});
@@ -341,6 +375,7 @@ export default function SalesPage({ fileData, title }) {
             rows={regions || []}
             headers={headers}
             skipCols={SKIP_REGIONS}
+            skipFirstGradientForCols={REGIONS_SKIP_FIRST_GRAD}
           />
         )}
         {activeView === 'subdivs' && (
