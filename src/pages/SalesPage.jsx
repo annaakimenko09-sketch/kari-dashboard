@@ -301,56 +301,64 @@ function SortableTable({
   );
 }
 
-// ─── Top15 table ───────────────────────────────────────────────────────────────
-// Shows top-15 best and top-15 worst by ТО LFL for a given region filter
-function Top15Table({ stores, headers, regionLabel }) {
-  const lflHeader = TO_LFL_HEADER;
+// ─── Top15 sub-table (sortable) ────────────────────────────────────────────────
+const TOP15_COLS = [1, 3, 4, 5, 7, 8, 9];
 
-  // Determine visible cols for top15: Подразделение, Магазин, ТЦ + ТО LFL + a few key metrics
-  // Show: B(1 Подразд), D(3 Магазин), E(4 ТЦ), F(5 ТО руб), J(9 ТО LFL), H(7 План %), I(8 Рост в ТО)
-  const TOP15_COLS = [1, 3, 4, 5, 7, 8, 9];
+function Top15SubTable({ rows, headers, scales, label, labelColor }) {
+  const [sortField, setSortField] = useState(null);
+  const [sortDir, setSortDir]   = useState('desc');
 
   const visHeaders = TOP15_COLS.map(ci => headers[ci]).filter(Boolean);
 
-  const withLfl = useMemo(() => {
-    return (stores || []).filter(row => {
-      const v = row[lflHeader];
-      return v !== null && v !== undefined && typeof v === 'number';
-    });
-  }, [stores, lflHeader]);
+  function handleSort(h) {
+    if (sortField === h) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(h);
+      setSortDir('desc');
+    }
+  }
 
   const sorted = useMemo(() => {
-    return [...withLfl].sort((a, b) => {
-      const av = a[lflHeader] ?? -Infinity;
-      const bv = b[lflHeader] ?? -Infinity;
-      return bv - av; // desc: best first
+    if (!sortField) return rows;
+    return [...rows].sort((a, b) => {
+      const av = a[sortField], bv = b[sortField];
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') {
+        return sortDir === 'asc' ? av - bv : bv - av;
+      }
+      return sortDir === 'asc'
+        ? String(av).localeCompare(String(bv), 'ru')
+        : String(bv).localeCompare(String(av), 'ru');
     });
-  }, [withLfl, lflHeader]);
+  }, [rows, sortField, sortDir]);
 
-  const best15  = sorted.slice(0, 15);
-  const worst15 = [...sorted].reverse().slice(0, 15);
-
-  const scales = useMemo(() => computeScales(stores || [], headers), [stores, headers]);
-
-  function renderRows(rows, label, labelColor) {
-    return (
-      <div>
-        <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: labelColor, backgroundColor: labelColor + '15' }}>
-          {label}
-        </div>
-        <table className="text-xs w-full border-collapse">
+  return (
+    <div>
+      <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: labelColor, backgroundColor: labelColor + '15' }}>
+        {label}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="text-xs w-full border-collapse" style={{ minWidth: '600px' }}>
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               {visHeaders.map((h, i) => (
-                <th key={i} className="px-2 py-1.5 text-center font-semibold text-gray-600"
-                  style={{ fontSize: '11px', minWidth: i <= 2 ? '100px' : '70px', verticalAlign: 'top' }}>
-                  <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.25' }}>{h}</div>
+                <th
+                  key={i}
+                  onClick={() => handleSort(h)}
+                  className="px-2 py-1.5 text-center font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100"
+                  style={{ fontSize: '11px', minWidth: i <= 2 ? '100px' : '70px', verticalAlign: 'top', padding: '4px' }}
+                >
+                  <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.25' }}>
+                    {h}{sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                  </div>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, ri) => (
+            {sorted.map((row, ri) => (
               <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">
                 {TOP15_COLS.map((ci, i) => {
                   const h = headers[ci];
@@ -370,23 +378,44 @@ function Top15Table({ stores, headers, regionLabel }) {
                 })}
               </tr>
             ))}
-            {rows.length === 0 && (
+            {sorted.length === 0 && (
               <tr><td colSpan={visHeaders.length} className="px-4 py-4 text-center text-gray-400">Нет данных</td></tr>
             )}
           </tbody>
         </table>
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+// ─── Top15 table ───────────────────────────────────────────────────────────────
+function Top15Table({ stores, headers, regionLabel }) {
+  const lflHeader = TO_LFL_HEADER;
+
+  const withLfl = useMemo(() => {
+    return (stores || []).filter(row => {
+      const v = row[lflHeader];
+      return v !== null && v !== undefined && typeof v === 'number';
+    });
+  }, [stores, lflHeader]);
+
+  const byLfl = useMemo(() => {
+    return [...withLfl].sort((a, b) => (b[lflHeader] ?? -Infinity) - (a[lflHeader] ?? -Infinity));
+  }, [withLfl, lflHeader]);
+
+  const best15  = byLfl.slice(0, 15);
+  const worst15 = [...byLfl].reverse().slice(0, 15);
+
+  const scales = useMemo(() => computeScales(stores || [], headers), [stores, headers]);
 
   return (
     <div className="space-y-4">
       <h2 className="text-sm font-bold text-gray-700 px-1">{regionLabel}</h2>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
-        {renderRows(best15, '15 лучших по ТО LFL', '#16a34a')}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <Top15SubTable rows={best15}  headers={headers} scales={scales} label="15 лучших по ТО LFL"  labelColor="#16a34a" />
       </div>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
-        {renderRows(worst15, '15 худших по ТО LFL', '#dc2626')}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <Top15SubTable rows={worst15} headers={headers} scales={scales} label="15 худших по ТО LFL" labelColor="#dc2626" />
       </div>
     </div>
   );
