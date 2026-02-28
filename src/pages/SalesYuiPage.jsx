@@ -8,21 +8,28 @@ import {
 } from '../utils/salesYuiParser';
 
 // Column visibility per view
-// A=0 Регион(файла), B=1 Подразделение, C=2 Магазин, D=3 ТЦ
-// В разделе Регионы: col A = «СПБ»/«БЕЛ» (регион файла), col B = «ИТОГО», col C = «РЕГИОН», col D = реальное название (Итого по СИБ и т.д.)
-// В разделе Подразделения: col A = регион файла, col C = «ИМ», col D = ТЦ
-// → Регионы: показываем col D (sticky) + метрики; скрываем A,B,C
-// → Подразделения: показываем col B (sticky) + метрики; скрываем A,C (col D оставляем)
-// → Магазины: показываем col B,C,D + метрики; скрываем A
-const SKIP_REGIONS = new Set([0, 1, 2]);   // скрыть A(регион файла), B(ИТОГО), C(РЕГИОН)
-const SKIP_SUBDIVS = new Set([0, 2]);      // скрыть A(регион файла), C(ИМ)
+// A=0 Регион(файла), B=1 Подразделение/название, C=2 Магазин/тип, D=3 ТЦ/итоговое название
+//
+// В Excel-файле:
+//   stores  (первая секция) → магазины: col B=подразделение, col C=номер магазина, col D=ТЦ
+//   subdivs (вторая секция) → РЕГИОНЫ:  col B=«ИТОГО», col C=«РЕГИОН», col D=«Итого по СИБ» и т.д.
+//   regions (третья секция) → ПОДРАЗДЕЛЕНИЯ: col B=«СПБ 1»/«БЕЛ 2», col C=«ИМ», col D=ТЦ
+//
+// Поэтому: вкладка «Регионы» использует данные subdivs, вкладка «Подразделения» — данные regions
+//
+// Регионы (subdivs): скрыть A(регион файла), B(ИТОГО), C(РЕГИОН) → sticky D («Итого по СИБ»), переименовать в «Регион»
+// Подразделения (regions): скрыть A(регион файла), C(ИМ) → sticky B (название подразделения), показывать D (ТЦ)
+// Магазины: скрыть A(регион файла)
+const SKIP_REGIONS = new Set([0, 1, 2]);   // для subdivs: скрыть A, B(ИТОГО), C(РЕГИОН)
+const SKIP_SUBDIVS = new Set([0, 2]);      // для regions: скрыть A, C(ИМ)
 const SKIP_STORES  = new Set([0]);         // скрыть A(регион файла)
 
-// Sticky column ci per view
-const STICKY_COL_CI = {
-  regions: 3,  // ТЦ — содержит «Итого по СИБ», «Итого по СПБ» и т.д.
-  subdivs: 1,  // Подразделение
-  stores:  3,  // ТЦ
+// Sticky columns: первые ДВА видимых текстовых столбца фиксируются
+// Для простоты — указываем набор ci которые являются sticky
+const STICKY_COLS = {
+  regions: new Set([3]),       // D — «Итого по СИБ»
+  subdivs: new Set([1, 3]),    // B — подразделение, D — ТЦ (второй sticky)
+  stores:  new Set([1, 2, 3]), // B,C,D — подразд, магазин, ТЦ
 };
 
 // Closed stores
@@ -51,11 +58,15 @@ function fmtVal(v, ci) {
 }
 
 // ─── Gradient helpers ──────────────────────────────────────────────────────────
+// 7-stop gradient: мягкий переход от красного через оранжевый/жёлтый к зелёному
 const COLOR_STOPS = [
-  [248, 105, 107],
-  [255, 167,  83],
-  [255, 235, 132],
-  [ 99, 190, 123],
+  [220,  80,  80],  // тёмно-красный (худший)
+  [240, 120,  80],  // красно-оранжевый
+  [248, 160,  80],  // оранжевый
+  [252, 210, 100],  // жёлто-оранжевый
+  [255, 240, 130],  // жёлтый
+  [170, 215, 110],  // жёлто-зелёный
+  [ 90, 180, 100],  // зелёный (лучший)
 ];
 
 function computeRGB(ratio) {
@@ -109,10 +120,10 @@ function SortableTable({
   showFilters = false,
   filterState = {},
   onFilterChange,
-  stickyColCi,
+  stickyCols = new Set(), // Set of ci to freeze
   subdivOptions = [],
-  labelOverrides = {},  // { ci: 'Новый заголовок' }
-  hideCols = new Set(), // дополнительные ci для скрытия (runtime, напр. для БЕЛ)
+  labelOverrides = {},    // { ci: 'Новый заголовок' }
+  hideCols = new Set(),   // дополнительные ci для скрытия (runtime)
 }) {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
@@ -131,7 +142,34 @@ function SortableTable({
   const effectiveSkip = hideCols.size > 0
     ? new Set([...skipCols, ...hideCols])
     : skipCols;
-  const visibleHeaders = headers.filter((_, ci) => !effectiveSkip.has(ci));
+  const visibleCIs = headers
+    .map((_, ci) => ci)
+    .filter(ci => !effectiveSkip.has(ci));
+  const visibleHeaders = visibleCIs.map(ci => headers[ci]);
+
+  // Compute left offsets for sticky columns
+  // sticky cols are the visible ones that are in stickyCols set, in order
+  // We need pixel widths — use fixed estimates: text cols 120px, metric cols 60px
+  const stickyLeftMap = useMemo(() => {
+    const map = {};
+    let left = 0;
+    for (const ci of visibleCIs) {
+      if (stickyCols.has(ci)) {
+        map[ci] = left;
+        const isText = ci <= 3;
+        left += isText ? 120 : 60;
+      }
+    }
+    return map;
+  }, [visibleCIs, stickyCols]);
+
+  const lastStickyCI = useMemo(() => {
+    let last = null;
+    for (const ci of visibleCIs) {
+      if (stickyCols.has(ci)) last = ci;
+    }
+    return last;
+  }, [visibleCIs, stickyCols]);
 
   const sorted = useMemo(() => {
     if (!sortField) return rows;
@@ -150,15 +188,36 @@ function SortableTable({
 
   const subdivHeader = headers[1] || '';
 
+  function getStickyThStyle(ci, bgColor = '#f9fafb') {
+    if (!stickyCols.has(ci)) return {};
+    return {
+      position: 'sticky',
+      left: stickyLeftMap[ci] ?? 0,
+      zIndex: 3,
+      backgroundColor: bgColor,
+      boxShadow: ci === lastStickyCI ? '2px 0 4px rgba(0,0,0,0.08)' : 'none',
+    };
+  }
+
+  function getStickyTdStyle(ci, bgColor = '#ffffff') {
+    if (!stickyCols.has(ci)) return {};
+    return {
+      position: 'sticky',
+      left: stickyLeftMap[ci] ?? 0,
+      zIndex: 1,
+      backgroundColor: bgColor,
+      boxShadow: ci === lastStickyCI ? '2px 0 4px rgba(0,0,0,0.08)' : 'none',
+    };
+  }
+
   return (
     <div className="overflow-x-auto">
       <table className="text-xs w-full border-collapse" style={{ tableLayout: 'auto', minWidth: '600px' }}>
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
-            {visibleHeaders.map((h, i) => {
-              const ci = headers.indexOf(h);
-              const isSticky = ci === stickyColCi;
-              const isTextCol = ci <= 3 && !effectiveSkip.has(ci);
+            {visibleCIs.map((ci, i) => {
+              const h = headers[ci];
+              const isTextCol = ci <= 3;
               const displayLabel = labelOverrides[ci] || h;
               return (
                 <th
@@ -167,17 +226,10 @@ function SortableTable({
                   className="px-2 py-1.5 text-center font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100"
                   style={{
                     fontSize: '11px',
-                    minWidth: isTextCol ? '100px' : '50px',
-                    maxWidth: isSticky ? '150px' : '90px',
+                    minWidth: isTextCol ? '110px' : '55px',
                     verticalAlign: 'top',
                     padding: '4px',
-                    ...(isSticky ? {
-                      position: 'sticky',
-                      left: 0,
-                      zIndex: 3,
-                      backgroundColor: '#f9fafb',
-                      boxShadow: '2px 0 4px rgba(0,0,0,0.08)',
-                    } : {}),
+                    ...getStickyThStyle(ci),
                   }}
                 >
                   <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.25' }}>
@@ -189,17 +241,11 @@ function SortableTable({
           </tr>
           {showFilters && (
             <tr className="bg-gray-50 border-b border-gray-200">
-              {visibleHeaders.map((h, i) => {
-                const ci = headers.indexOf(h);
-                const isSticky = ci === stickyColCi;
+              {visibleCIs.map((ci, i) => {
+                const h = headers[ci];
                 const isTextCol = ci <= 3;
                 const isSubdivCol = h === subdivHeader && subdivOptions.length > 0;
-
-                const stickyStyle = isSticky ? {
-                  position: 'sticky', left: 0, zIndex: 3,
-                  backgroundColor: '#f9fafb',
-                  boxShadow: '2px 0 4px rgba(0,0,0,0.08)',
-                } : {};
+                const stickyStyle = getStickyThStyle(ci);
 
                 if (!isTextCol) return <th key={i} className="px-1 py-0.5" style={stickyStyle} />;
 
@@ -238,30 +284,23 @@ function SortableTable({
         <tbody>
           {sorted.map((row, ri) => (
             <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">
-              {visibleHeaders.map((h, i) => {
-                const ci = headers.indexOf(h);
+              {visibleCIs.map((ci, i) => {
+                const h = headers[ci];
                 const val = row[`_c${ci}`];
-                const isSticky = ci === stickyColCi;
-                let style = {};
+                let gradBg = null;
                 if (typeof val === 'number' && scales[ci]) {
                   if (YUI_COLS_HIGH_GOOD.has(ci) || YUI_COLS_HIGH_BAD.has(ci)) {
-                    style = gradientStyle(val, scales[ci].min, scales[ci].max, YUI_COLS_HIGH_BAD.has(ci));
+                    const gs = gradientStyle(val, scales[ci].min, scales[ci].max, YUI_COLS_HIGH_BAD.has(ci));
+                    gradBg = gs.backgroundColor;
                   }
                 }
+                const cellStyle = {
+                  fontSize: '11px',
+                  ...(gradBg ? { backgroundColor: gradBg, color: '#1f2937', fontWeight: '500' } : {}),
+                  ...getStickyTdStyle(ci, gradBg || '#ffffff'),
+                };
                 return (
-                  <td
-                    key={i}
-                    className="px-2 py-1 text-center"
-                    style={{
-                      ...style,
-                      fontSize: '11px',
-                      ...(isSticky ? {
-                        position: 'sticky', left: 0, zIndex: 1,
-                        backgroundColor: style.backgroundColor || '#ffffff',
-                        boxShadow: '2px 0 4px rgba(0,0,0,0.08)',
-                      } : {}),
-                    }}
-                  >
+                  <td key={i} className="px-2 py-1 text-center" style={cellStyle}>
                     {fmtVal(val, ci)}
                   </td>
                 );
@@ -270,7 +309,7 @@ function SortableTable({
           ))}
           {sorted.length === 0 && (
             <tr>
-              <td colSpan={visibleHeaders.length} className="px-4 py-8 text-center text-gray-400">
+              <td colSpan={visibleCIs.length} className="px-4 py-8 text-center text-gray-400">
                 Нет данных
               </td>
             </tr>
@@ -398,8 +437,8 @@ function Top15Table({ stores, headers }) {
 function exportToExcel(fileData, title, filteredStores, extraHideCols = new Set()) {
   const wb = XLSXStyle.utils.book_new();
   const views = [
-    { label: 'Регионы',       rows: fileData.regions, skipCols: SKIP_REGIONS },
-    { label: 'Подразделения', rows: fileData.subdivs, skipCols: SKIP_SUBDIVS },
+    { label: 'Регионы',       rows: fileData.subdivs, skipCols: SKIP_REGIONS }, // subdivs = итоги по регионам
+    { label: 'Подразделения', rows: fileData.regions, skipCols: SKIP_SUBDIVS }, // regions = подразделения
     { label: 'Магазины',      rows: filteredStores,   skipCols: SKIP_STORES  },
   ];
   const headers = fileData.headers;
@@ -501,9 +540,10 @@ export default function SalesYuiPage({ fileData, title }) {
     );
   }, [stores, storeFilters]);
 
+  // Вкладка «Регионы» отображает subdivs (итоги по регионам), «Подразделения» — regions
   const tabCounts = {
-    regions: regions?.length ?? 0,
-    subdivs: subdivs?.length ?? 0,
+    regions: subdivs?.length ?? 0,
+    subdivs: regions?.length ?? 0,
     stores:  stores?.length ?? 0,
   };
 
@@ -549,21 +589,23 @@ export default function SalesYuiPage({ fileData, title }) {
 
       <div className={activeView !== 'top15' ? 'bg-white rounded-xl border border-gray-200 overflow-hidden' : ''}>
         {activeView === 'regions' && (
+          // Регионы — используем subdivs (содержит итоги по регионам: СИБ, УРЛ и т.д.)
           <SortableTable
-            rows={regions || []}
+            rows={subdivs || []}
             headers={headers}
             skipCols={SKIP_REGIONS}
-            stickyColCi={STICKY_COL_CI.regions}
+            stickyCols={STICKY_COLS.regions}
             labelOverrides={regionLabelOverrides}
             hideCols={belHideCols}
           />
         )}
         {activeView === 'subdivs' && (
+          // Подразделения — используем regions (содержит подразделения: СПБ 1, БЕЛ 2 и т.д.)
           <SortableTable
-            rows={subdivs || []}
+            rows={regions || []}
             headers={headers}
             skipCols={SKIP_SUBDIVS}
-            stickyColCi={STICKY_COL_CI.subdivs}
+            stickyCols={STICKY_COLS.subdivs}
             hideCols={belHideCols}
           />
         )}
@@ -575,7 +617,7 @@ export default function SalesYuiPage({ fileData, title }) {
             showFilters={true}
             filterState={storeFilters}
             onFilterChange={(h, v) => setStoreFilters(prev => ({ ...prev, [h]: v }))}
-            stickyColCi={STICKY_COL_CI.stores}
+            stickyCols={STICKY_COLS.stores}
             subdivOptions={subdivOptions}
             hideCols={belHideCols}
           />
