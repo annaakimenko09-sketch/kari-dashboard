@@ -9,25 +9,28 @@ const SKIP_SUBDIVS = new Set([0, 2, 3, 4]);     // hide A, C, D, E  → only П�
 const SKIP_STORES  = new Set([0, 2]);            // hide A, C
 
 // ─── Gradient helpers ──────────────────────────────────────────────────────────
-// Pastel scale: red(248,105,107) → white(255,255,255) → green(99,190,123)
-// ratio 0 = red, 0.5 = white, 1 = green
+// Full Excel color scale: green(99,190,123) → yellow(255,235,132) → orange(255,167,83) → red(248,105,107)
+// ratio 0 = red (worst), ratio 1 = green (best)
+const COLOR_STOPS = [
+  [248, 105, 107], // 0.00 red
+  [255, 167,  83], // 0.33 orange
+  [255, 235, 132], // 0.67 yellow
+  [ 99, 190, 123], // 1.00 green
+];
+
 function computeRGB(ratio) {
-  const RED   = [248, 105, 107];
-  const WHITE = [255, 255, 255];
-  const GREEN = [99,  190, 123];
-  let r, g, b;
-  if (ratio <= 0.5) {
-    const t = ratio / 0.5;
-    r = Math.round(RED[0] + (WHITE[0] - RED[0]) * t);
-    g = Math.round(RED[1] + (WHITE[1] - RED[1]) * t);
-    b = Math.round(RED[2] + (WHITE[2] - RED[2]) * t);
-  } else {
-    const t = (ratio - 0.5) / 0.5;
-    r = Math.round(WHITE[0] + (GREEN[0] - WHITE[0]) * t);
-    g = Math.round(WHITE[1] + (GREEN[1] - WHITE[1]) * t);
-    b = Math.round(WHITE[2] + (GREEN[2] - WHITE[2]) * t);
-  }
-  return [r, g, b];
+  const n = COLOR_STOPS.length - 1;
+  const pos = ratio * n;
+  const lo = Math.floor(pos);
+  const hi = Math.min(lo + 1, n);
+  const t = pos - lo;
+  const [r1, g1, b1] = COLOR_STOPS[lo];
+  const [r2, g2, b2] = COLOR_STOPS[hi];
+  return [
+    Math.round(r1 + (r2 - r1) * t),
+    Math.round(g1 + (g2 - g1) * t),
+    Math.round(b1 + (b2 - b1) * t),
+  ];
 }
 
 function gradientStyle(val, min, max, invert) {
@@ -120,10 +123,19 @@ function SortableTable({ rows, headers, skipCols, showFilters = false, filterSta
                 key={i}
                 onClick={() => handleSort(h)}
                 className="px-2 py-1.5 text-center font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100"
-                style={{ fontSize: '11px', maxWidth: '80px', wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.2', verticalAlign: 'bottom' }}
+                style={{ fontSize: '11px', width: '70px', minWidth: '50px', maxWidth: '90px', verticalAlign: 'bottom', padding: '4px 4px 4px 4px' }}
               >
-                {h}
-                {sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                <div style={{
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  lineHeight: '1.25',
+                  wordBreak: 'break-word',
+                  whiteSpace: 'normal',
+                }}>
+                  {h}{sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                </div>
               </th>
             ))}
           </tr>

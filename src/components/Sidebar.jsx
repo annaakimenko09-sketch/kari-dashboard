@@ -22,7 +22,7 @@ const BRAND = '#E91E8C';
 const sections = [
   {
     label: 'Продажи',
-    color: '#dc2626',
+    color: '#E91E8C',
     items: [
       { path: '/sales/day/spb',   label: 'День СПБ',   icon: BarChart2 },
       { path: '/sales/day/bel',   label: 'День БЕЛ',   icon: BarChart2 },
