@@ -2,48 +2,44 @@ import { useState, useMemo } from 'react';
 import * as XLSXStyle from 'xlsx-js-style';
 import { COLS_HIGH_GOOD, COLS_HIGH_BAD } from '../utils/salesParser';
 
+// Columns to hide per view (0-based indices matching Рег sheet headers)
+// A=0 Регион, B=1 Подразделение, C=2 (0/1 flag), D=3 Магазин, E=4 ТЦ
+const SKIP_REGIONS = new Set([1, 2, 3]);        // hide B, C, D
+const SKIP_SUBDIVS = new Set([0, 2, 3, 4]);     // hide A, C, D, E  → only Подразделение + metrics
+const SKIP_STORES  = new Set([0, 2]);            // hide A, C
+
 // ─── Gradient helpers ──────────────────────────────────────────────────────────
 function computeRGB(ratio) {
+  // ratio 0 → red, ratio 1 → green
   const r = Math.round(255 * (1 - ratio));
   const g = Math.round(200 * ratio);
   const b = 60;
   return [r, g, b];
 }
 
-function gradientStyleGood(val, min, max) {
-  if (min === max || val === null || val === undefined) return {};
-  const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
+function gradientStyle(val, min, max, invert) {
+  if (min === max || val === null || val === undefined || typeof val !== 'number') return {};
+  let ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
+  if (invert) ratio = 1 - ratio;
   const [r, g, b] = computeRGB(ratio);
   return { backgroundColor: `rgb(${r},${g},${b})`, color: '#111827' };
 }
 
-function gradientStyleBad(val, min, max) {
-  if (min === max || val === null || val === undefined) return {};
-  // higher = worse = red → invert ratio
-  const ratio = 1 - Math.max(0, Math.min(1, (val - min) / (max - min)));
-  const [r, g, b] = computeRGB(ratio);
-  return { backgroundColor: `rgb(${r},${g},${b})`, color: '#111827' };
-}
-
-function gradientHexGood(val, min, max) {
-  if (min === max || val === null || val === undefined) return null;
-  const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
+function gradientHex(val, min, max, invert) {
+  if (min === max || val === null || val === undefined || typeof val !== 'number') return null;
+  let ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
+  if (invert) ratio = 1 - ratio;
   const [r, g, b] = computeRGB(ratio);
   return ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0').toUpperCase();
 }
 
-function gradientHexBad(val, min, max) {
-  if (min === max || val === null || val === undefined) return null;
-  const ratio = 1 - Math.max(0, Math.min(1, (val - min) / (max - min)));
-  const [r, g, b] = computeRGB(ratio);
-  return ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0').toUpperCase();
-}
-
-// ─── Scale computation ─────────────────────────────────────────────────────────
+// ─── Scale computation — per-column, from the rows being displayed ─────────────
 function computeScales(rows, headers) {
   const scales = {};
-  headers.forEach((h, ci) => {
-    const vals = rows.map(r => r[`_c${ci}`]).filter(v => v !== null && v !== undefined && typeof v === 'number');
+  headers.forEach((_, ci) => {
+    const vals = rows
+      .map(r => r[`_c${ci}`])
+      .filter(v => v !== null && v !== undefined && typeof v === 'number');
     if (vals.length === 0) return;
     scales[ci] = { min: Math.min(...vals), max: Math.max(...vals) };
   });
@@ -61,9 +57,12 @@ function fmtVal(v) {
 }
 
 // ─── SortableTable ─────────────────────────────────────────────────────────────
-function SortableTable({ rows, headers, scales, skipCols = new Set(), showFilters = false, filterState = {}, onFilterChange }) {
+function SortableTable({ rows, headers, skipCols, showFilters = false, filterState = {}, onFilterChange }) {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
+
+  // Compute scales from the rows passed in (per-view, per-column)
+  const scales = useMemo(() => computeScales(rows, headers), [rows, headers]);
 
   function handleSort(h) {
     if (sortField === h) {
@@ -91,32 +90,35 @@ function SortableTable({ rows, headers, scales, skipCols = new Set(), showFilter
     });
   }, [rows, sortField, sortDir]);
 
+  // Which visible columns should show filter inputs (string/text columns only)
+  const textColIndices = new Set(
+    headers
+      .map((_, ci) => ci)
+      .filter(ci => !skipCols.has(ci) && ci <= 4)
+  );
+
   return (
     <div className="overflow-x-auto">
-      <table className="text-xs w-full border-collapse" style={{ tableLayout: 'auto', minWidth: '800px' }}>
+      <table className="text-xs w-full border-collapse" style={{ tableLayout: 'auto', minWidth: '600px' }}>
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
-            {visibleHeaders.map((h, i) => {
-              const ci = headers.indexOf(h);
-              return (
-                <th
-                  key={i}
-                  onClick={() => handleSort(h)}
-                  className="px-2 py-1.5 text-left font-semibold text-gray-600 cursor-pointer select-none whitespace-nowrap hover:bg-gray-100"
-                  style={{ fontSize: '11px' }}
-                >
-                  {h}
-                  {sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
-                </th>
-              );
-            })}
+            {visibleHeaders.map((h, i) => (
+              <th
+                key={i}
+                onClick={() => handleSort(h)}
+                className="px-2 py-1.5 text-left font-semibold text-gray-600 cursor-pointer select-none whitespace-nowrap hover:bg-gray-100"
+                style={{ fontSize: '11px' }}
+              >
+                {h}
+                {sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+              </th>
+            ))}
           </tr>
           {showFilters && (
             <tr className="bg-gray-50 border-b border-gray-200">
               {visibleHeaders.map((h, i) => {
                 const ci = headers.indexOf(h);
-                // Only show text filters for first few string columns
-                if (ci > 4) return <th key={i} className="px-1 py-0.5" />;
+                if (!textColIndices.has(ci)) return <th key={i} className="px-1 py-0.5" />;
                 return (
                   <th key={i} className="px-1 py-0.5">
                     <input
@@ -138,13 +140,11 @@ function SortableTable({ rows, headers, scales, skipCols = new Set(), showFilter
               {visibleHeaders.map((h, i) => {
                 const ci = headers.indexOf(h);
                 const val = row[`_c${ci}`];
-                const numVal = typeof val === 'number' ? val : null;
                 let style = {};
-                if (numVal !== null && scales[ci]) {
-                  if (COLS_HIGH_GOOD.has(ci)) {
-                    style = gradientStyleGood(numVal, scales[ci].min, scales[ci].max);
-                  } else if (COLS_HIGH_BAD.has(ci)) {
-                    style = gradientStyleBad(numVal, scales[ci].min, scales[ci].max);
+                if (typeof val === 'number' && scales[ci]) {
+                  const invert = COLS_HIGH_BAD.has(ci);
+                  if (COLS_HIGH_GOOD.has(ci) || COLS_HIGH_BAD.has(ci)) {
+                    style = gradientStyle(val, scales[ci].min, scales[ci].max, invert);
                   }
                 }
                 return (
@@ -173,13 +173,12 @@ function exportToExcel(fileData, title) {
   const wb = XLSXStyle.utils.book_new();
 
   const views = [
-    { key: 'regions',  label: 'Регионы',        rows: fileData.regions,  skipCols: new Set([2]) },
-    { key: 'subdivs',  label: 'Подразделения',   rows: fileData.subdivs,  skipCols: new Set([2]) },
-    { key: 'stores',   label: 'Магазины',        rows: fileData.stores,   skipCols: new Set([2]) },
+    { label: 'Регионы',      rows: fileData.regions, skipCols: SKIP_REGIONS },
+    { label: 'Подразделения', rows: fileData.subdivs, skipCols: SKIP_SUBDIVS },
+    { label: 'Магазины',     rows: fileData.stores,  skipCols: SKIP_STORES  },
   ];
 
   const headers = fileData.headers;
-  const allRows = [...fileData.regions, ...fileData.subdivs, ...fileData.stores];
 
   views.forEach(({ label, rows, skipCols }) => {
     if (!rows || rows.length === 0) return;
@@ -187,8 +186,8 @@ function exportToExcel(fileData, title) {
     const visHeaders = headers.filter((_, ci) => !skipCols.has(ci));
     const visIndices = headers.map((_, ci) => ci).filter(ci => !skipCols.has(ci));
 
-    // Compute scales from all rows (global)
-    const scales = computeScales(allRows, headers);
+    // Per-view, per-column scales
+    const scales = computeScales(rows, headers);
 
     const wsData = [visHeaders];
     rows.forEach(row => {
@@ -200,20 +199,16 @@ function exportToExcel(fileData, title) {
 
     const ws = XLSXStyle.utils.aoa_to_sheet(wsData);
 
-    // Apply conditional formatting styles
     for (let ri = 1; ri < wsData.length; ri++) {
       visIndices.forEach((ci, vci) => {
         const row = rows[ri - 1];
         const val = row[`_c${ci}`];
         if (typeof val !== 'number') return;
         if (!scales[ci]) return;
+        if (!COLS_HIGH_GOOD.has(ci) && !COLS_HIGH_BAD.has(ci)) return;
 
-        let hex = null;
-        if (COLS_HIGH_GOOD.has(ci)) {
-          hex = gradientHexGood(val, scales[ci].min, scales[ci].max);
-        } else if (COLS_HIGH_BAD.has(ci)) {
-          hex = gradientHexBad(val, scales[ci].min, scales[ci].max);
-        }
+        const invert = COLS_HIGH_BAD.has(ci);
+        const hex = gradientHex(val, scales[ci].min, scales[ci].max, invert);
         if (!hex) return;
 
         const cellAddr = XLSXStyle.utils.encode_cell({ r: ri, c: vci });
@@ -229,8 +224,7 @@ function exportToExcel(fileData, title) {
     XLSXStyle.utils.book_append_sheet(wb, ws, label.substring(0, 31));
   });
 
-  const fname = `${title}.xlsx`;
-  XLSXStyle.writeFile(wb, fname);
+  XLSXStyle.writeFile(wb, `${title}.xlsx`);
 }
 
 // ─── Main SalesPage component ──────────────────────────────────────────────────
@@ -248,36 +242,33 @@ export default function SalesPage({ fileData, title }) {
   }
 
   const { headers, stores, subdivs, regions, periods } = fileData;
+  const periodInfo = periods && periods.length > 0 ? periods[0] : '';
 
-  // Skip col index 2 (0/1 flag column)
-  const SKIP = new Set([2]);
-
-  // Compute scales from all data
-  const allRows = [...(regions || []), ...(subdivs || []), ...(stores || [])];
-  const scales = useMemo(() => computeScales(allRows, headers), [fileData]);
-
-  // Apply text filters to stores
   const filteredStores = useMemo(() => {
-    return (stores || []).filter(row => {
-      return Object.entries(storeFilters).every(([h, val]) => {
+    return (stores || []).filter(row =>
+      Object.entries(storeFilters).every(([h, val]) => {
         if (!val) return true;
         const v = row[h];
         return v !== null && v !== undefined && String(v).toLowerCase().includes(val.toLowerCase());
-      });
-    });
+      })
+    );
   }, [stores, storeFilters]);
 
   const filteredSubdivs = useMemo(() => {
-    return (subdivs || []).filter(row => {
-      return Object.entries(subdivFilters).every(([h, val]) => {
+    return (subdivs || []).filter(row =>
+      Object.entries(subdivFilters).every(([h, val]) => {
         if (!val) return true;
         const v = row[h];
         return v !== null && v !== undefined && String(v).toLowerCase().includes(val.toLowerCase());
-      });
-    });
+      })
+    );
   }, [subdivs, subdivFilters]);
 
-  const periodInfo = periods && periods.length > 0 ? periods[0] : '';
+  const tabCounts = {
+    regions: regions?.length ?? 0,
+    subdivs: subdivs?.length ?? 0,
+    stores:  stores?.length ?? 0,
+  };
 
   return (
     <div className="p-4 space-y-4">
@@ -285,9 +276,7 @@ export default function SalesPage({ fileData, title }) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-lg font-bold text-gray-800">{title}</h1>
-          {periodInfo && (
-            <p className="text-xs text-gray-500 mt-0.5">{periodInfo}</p>
-          )}
+          {periodInfo && <p className="text-xs text-gray-500 mt-0.5">{periodInfo}</p>}
         </div>
         <button
           onClick={() => exportToExcel(fileData, title)}
@@ -315,14 +304,7 @@ export default function SalesPage({ fileData, title }) {
             }`}
           >
             {tab.label}
-            <span className="ml-1 text-gray-400 font-normal">
-              ({activeView === 'regions' && tab.key === 'regions' ? regions?.length ?? 0
-                : activeView === 'subdivs' && tab.key === 'subdivs' ? filteredSubdivs.length
-                : activeView === 'stores' && tab.key === 'stores' ? filteredStores.length
-                : tab.key === 'regions' ? regions?.length ?? 0
-                : tab.key === 'subdivs' ? subdivs?.length ?? 0
-                : stores?.length ?? 0})
-            </span>
+            <span className="ml-1 text-gray-400 font-normal">({tabCounts[tab.key]})</span>
           </button>
         ))}
       </div>
@@ -333,16 +315,14 @@ export default function SalesPage({ fileData, title }) {
           <SortableTable
             rows={regions || []}
             headers={headers}
-            scales={scales}
-            skipCols={SKIP}
+            skipCols={SKIP_REGIONS}
           />
         )}
         {activeView === 'subdivs' && (
           <SortableTable
             rows={filteredSubdivs}
             headers={headers}
-            scales={scales}
-            skipCols={SKIP}
+            skipCols={SKIP_SUBDIVS}
             showFilters={true}
             filterState={subdivFilters}
             onFilterChange={(h, v) => setSubdivFilters(prev => ({ ...prev, [h]: v }))}
@@ -352,8 +332,7 @@ export default function SalesPage({ fileData, title }) {
           <SortableTable
             rows={filteredStores}
             headers={headers}
-            scales={scales}
-            skipCols={SKIP}
+            skipCols={SKIP_STORES}
             showFilters={true}
             filterState={storeFilters}
             onFilterChange={(h, v) => setStoreFilters(prev => ({ ...prev, [h]: v }))}
