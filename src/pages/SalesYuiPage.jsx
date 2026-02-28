@@ -22,7 +22,7 @@ import {
 // Магазины: скрыть A(регион файла)
 const SKIP_REGIONS = new Set([0, 1, 2]);   // для subdivs: скрыть A, B(ИТОГО), C(РЕГИОН)
 const SKIP_SUBDIVS = new Set([0, 2]);      // для regions: скрыть A, C(ИМ)
-const SKIP_STORES  = new Set([0]);         // скрыть A(регион файла)
+const SKIP_STORES  = new Set([0, 5]);      // скрыть A(регион файла) и ТО ЮИ/ТО (ci=5)
 
 // Sticky columns: первые ДВА видимых текстовых столбца фиксируются
 // Для простоты — указываем набор ci которые являются sticky
@@ -39,8 +39,8 @@ const CLOSED_STORES = new Set([11596, 11787, 50015]);
 const TOP15_HEADER = 'Доля ЮИ %';
 const TOP15_CI = 4;
 
-// Top-15 visible columns: Подразд(1), Магазин(2), ТЦ(3), Доля ЮИ%(4), ТО ЮИ/ТО(5), План%(9), ТО ЮИ руб.(12)
-const TOP15_COLS = [1, 2, 3, 4, 5, 9, 12];
+// Top-15 visible columns: Подразд(1), Магазин(2), ТЦ(3), Доля ЮИ%(4), План%(9), ТО ЮИ руб.(12)
+const TOP15_COLS = [1, 2, 3, 4, 9, 12];
 
 // ─── Format helpers ────────────────────────────────────────────────────────────
 function fmtVal(v, ci) {
@@ -58,15 +58,19 @@ function fmtVal(v, ci) {
 }
 
 // ─── Gradient helpers ──────────────────────────────────────────────────────────
-// 7-stop gradient: мягкий переход от красного через оранжевый/жёлтый к зелёному
+// 11-stop gradient: максимально плавный переход от красного через оранжевый/жёлтый к зелёному
 const COLOR_STOPS = [
-  [220,  80,  80],  // тёмно-красный (худший)
-  [240, 120,  80],  // красно-оранжевый
-  [248, 160,  80],  // оранжевый
-  [252, 210, 100],  // жёлто-оранжевый
+  [220,  60,  60],  // тёмно-красный (худший)
+  [235,  90,  70],  // красный
+  [245, 120,  75],  // красно-оранжевый
+  [250, 155,  80],  // оранжевый
+  [253, 185,  90],  // светло-оранжевый
+  [254, 215, 105],  // жёлто-оранжевый
   [255, 240, 130],  // жёлтый
-  [170, 215, 110],  // жёлто-зелёный
-  [ 90, 180, 100],  // зелёный (лучший)
+  [220, 235, 115],  // жёлто-зелёный светлый
+  [170, 215, 100],  // жёлто-зелёный
+  [115, 195,  95],  // светло-зелёный
+  [ 75, 170,  90],  // зелёный (лучший)
 ];
 
 function computeRGB(ratio) {
@@ -282,31 +286,40 @@ function SortableTable({
           )}
         </thead>
         <tbody>
-          {sorted.map((row, ri) => (
-            <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">
-              {visibleCIs.map((ci, i) => {
-                const h = headers[ci];
-                const val = row[`_c${ci}`];
-                let gradBg = null;
-                if (typeof val === 'number' && scales[ci]) {
-                  if (YUI_COLS_HIGH_GOOD.has(ci) || YUI_COLS_HIGH_BAD.has(ci)) {
-                    const gs = gradientStyle(val, scales[ci].min, scales[ci].max, YUI_COLS_HIGH_BAD.has(ci));
-                    gradBg = gs.backgroundColor;
+          {sorted.map((row, ri) => {
+            // Строка «Итого по Kari» — не применяем градиент к ТО ЮИ руб.(12), ТО Серебро(13), ТО Золото(14)
+            const rowName = String(row['_c3'] || '').toLowerCase();
+            const isKariRow = rowName.includes('kari') || rowName.includes('кари');
+            const KARI_NO_GRAD = new Set([12, 13, 14]);
+            return (
+              <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">
+                {visibleCIs.map((ci, i) => {
+                  const h = headers[ci];
+                  const val = row[`_c${ci}`];
+                  let gradBg = null;
+                  const skipGrad = isKariRow && KARI_NO_GRAD.has(ci);
+                  if (!skipGrad && typeof val === 'number' && scales[ci]) {
+                    if (YUI_COLS_HIGH_GOOD.has(ci) || YUI_COLS_HIGH_BAD.has(ci)) {
+                      const gs = gradientStyle(val, scales[ci].min, scales[ci].max, YUI_COLS_HIGH_BAD.has(ci));
+                      gradBg = gs.backgroundColor;
+                    }
                   }
-                }
-                const cellStyle = {
-                  fontSize: '11px',
-                  ...(gradBg ? { backgroundColor: gradBg, color: '#1f2937', fontWeight: '500' } : {}),
-                  ...getStickyTdStyle(ci, gradBg || '#ffffff'),
-                };
-                return (
-                  <td key={i} className="px-2 py-1 text-center" style={cellStyle}>
-                    {fmtVal(val, ci)}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+                  // Sticky columns: always use solid white background (no gradient bleed-through)
+                  const isStickyCol = stickyCols.has(ci);
+                  const cellStyle = {
+                    fontSize: '11px',
+                    ...(gradBg && !isStickyCol ? { backgroundColor: gradBg, color: '#1f2937', fontWeight: '500' } : {}),
+                    ...getStickyTdStyle(ci, '#ffffff'),
+                  };
+                  return (
+                    <td key={i} className="px-2 py-1 text-center" style={cellStyle}>
+                      {fmtVal(val, ci)}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
           {sorted.length === 0 && (
             <tr>
               <td colSpan={visibleCIs.length} className="px-4 py-8 text-center text-gray-400">
@@ -434,10 +447,10 @@ function Top15Table({ stores, headers }) {
 }
 
 // ─── Excel export ──────────────────────────────────────────────────────────────
-function exportToExcel(fileData, title, filteredStores, extraHideCols = new Set()) {
+function exportToExcel(fileData, title, filteredStores, extraHideCols = new Set(), filteredSubdivs = null) {
   const wb = XLSXStyle.utils.book_new();
   const views = [
-    { label: 'Регионы',       rows: fileData.subdivs, skipCols: SKIP_REGIONS }, // subdivs = итоги по регионам
+    { label: 'Регионы',       rows: filteredSubdivs ?? fileData.subdivs, skipCols: SKIP_REGIONS }, // subdivs = итоги по регионам
     { label: 'Подразделения', rows: fileData.regions, skipCols: SKIP_SUBDIVS }, // regions = подразделения
     { label: 'Магазины',      rows: filteredStores,   skipCols: SKIP_STORES  },
   ];
@@ -541,8 +554,16 @@ export default function SalesYuiPage({ fileData, title }) {
   }, [stores, storeFilters]);
 
   // Вкладка «Регионы» отображает subdivs (итоги по регионам), «Подразделения» — regions
+  // Фильтруем строку «Итого по Кидс» из вкладки Регионы
+  const filteredSubdivs = useMemo(() => {
+    return (subdivs || []).filter(row => {
+      const name = String(row['_c3'] || '').toLowerCase();
+      return !name.includes('кидс') && !name.includes('kids');
+    });
+  }, [subdivs]);
+
   const tabCounts = {
-    regions: subdivs?.length ?? 0,
+    regions: filteredSubdivs.length,
     subdivs: regions?.length ?? 0,
     stores:  stores?.length ?? 0,
   };
@@ -555,7 +576,7 @@ export default function SalesYuiPage({ fileData, title }) {
           {periodInfo && <p className="text-xs text-gray-500 mt-0.5">{periodInfo}</p>}
         </div>
         <button
-          onClick={() => exportToExcel(fileData, title, filteredStores, belHideCols)}
+          onClick={() => exportToExcel(fileData, title, filteredStores, belHideCols, filteredSubdivs)}
           className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white"
           style={{ backgroundColor: '#16a34a' }}
         >
@@ -591,7 +612,7 @@ export default function SalesYuiPage({ fileData, title }) {
         {activeView === 'regions' && (
           // Регионы — используем subdivs (содержит итоги по регионам: СИБ, УРЛ и т.д.)
           <SortableTable
-            rows={subdivs || []}
+            rows={filteredSubdivs}
             headers={headers}
             skipCols={SKIP_REGIONS}
             stickyCols={STICKY_COLS.regions}
