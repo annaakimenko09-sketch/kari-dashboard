@@ -108,6 +108,14 @@ function gradientHex(val, min, max, invert) {
   return ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0').toUpperCase();
 }
 
+function percentile(sorted, p) {
+  if (sorted.length === 0) return 0;
+  const idx = (p / 100) * (sorted.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.min(lo + 1, sorted.length - 1);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
+
 function computeScales(rows, headers, excludeKari = false) {
   const scales = {};
   const scaleRows = excludeKari
@@ -119,9 +127,13 @@ function computeScales(rows, headers, excludeKari = false) {
   headers.forEach((_, ci) => {
     const vals = scaleRows
       .map(r => r[`_c${ci}`])
-      .filter(v => v !== null && v !== undefined && typeof v === 'number');
+      .filter(v => v !== null && v !== undefined && typeof v === 'number')
+      .sort((a, b) => a - b);
     if (vals.length === 0) return;
-    scales[ci] = { min: Math.min(...vals), max: Math.max(...vals) };
+    // Используем 5-й и 95-й перцентили чтобы выбросы не сжимали цветовую шкалу
+    const p5  = percentile(vals, 5);
+    const p95 = percentile(vals, 95);
+    scales[ci] = { min: p5, max: p95 };
   });
   return scales;
 }
@@ -479,7 +491,9 @@ function exportToExcel(fileData, title, filteredStores, extraHideCols = new Set(
     const effectiveSkip = extraHideCols.size > 0 ? new Set([...skipCols, ...extraHideCols]) : skipCols;
     const visHeaders = headers.filter((_, ci) => !effectiveSkip.has(ci));
     const visIndices = headers.map((_, ci) => ci).filter(ci => !effectiveSkip.has(ci));
-    const scales = computeScales(rows, headers);
+    const isRegionsView = label === 'Регионы';
+    const scales = computeScales(rows, headers, isRegionsView);
+    const KARI_NO_GRAD_EXCEL = new Set([12, 13, 14]);
 
     const wsData = [visHeaders];
     rows.forEach(row => {
@@ -496,13 +510,17 @@ function exportToExcel(fileData, title, filteredStores, extraHideCols = new Set(
     const ws = XLSXStyle.utils.aoa_to_sheet(wsData);
 
     for (let ri = 1; ri < wsData.length; ri++) {
+      const row = rows[ri - 1];
+      const rowName = String(row['_c3'] || '').toLowerCase();
+      const isKariRow = rowName.includes('kari') || rowName.includes('кари');
       visIndices.forEach((ci, vci) => {
         const cellAddr = XLSXStyle.utils.encode_cell({ r: ri, c: vci });
         if (!ws[cellAddr]) return;
         if (typeof ws[cellAddr].v !== 'number') return;
-        const val = rows[ri - 1][`_c${ci}`];
+        const val = row[`_c${ci}`];
         let bgHex = null;
-        if (typeof val === 'number' && scales[ci] && (YUI_COLS_HIGH_GOOD.has(ci) || YUI_COLS_HIGH_BAD.has(ci))) {
+        const skipGrad = isKariRow && KARI_NO_GRAD_EXCEL.has(ci);
+        if (!skipGrad && typeof val === 'number' && scales[ci] && (YUI_COLS_HIGH_GOOD.has(ci) || YUI_COLS_HIGH_BAD.has(ci))) {
           bgHex = gradientHex(val, scales[ci].min, scales[ci].max, YUI_COLS_HIGH_BAD.has(ci));
         }
         ws[cellAddr].s = {
