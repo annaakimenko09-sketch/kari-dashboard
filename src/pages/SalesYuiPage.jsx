@@ -8,14 +8,19 @@ import {
 } from '../utils/salesYuiParser';
 
 // Column visibility per view
-// A=0 Регион, B=1 Подразделение, C=2 Магазин, D=3 ТЦ
-const SKIP_REGIONS = new Set([1, 2, 3]);   // hide Подразд, Магазин, ТЦ
-const SKIP_SUBDIVS = new Set([0, 2, 3]);   // hide Регион, Магазин, ТЦ
-const SKIP_STORES  = new Set([0]);         // hide Регион
+// A=0 Регион(файла), B=1 Подразделение, C=2 Магазин, D=3 ТЦ
+// В разделе Регионы: col A = «СПБ»/«БЕЛ» (регион файла), col B = «ИТОГО», col C = «РЕГИОН», col D = реальное название (Итого по СИБ и т.д.)
+// В разделе Подразделения: col A = регион файла, col C = «ИМ», col D = ТЦ
+// → Регионы: показываем col D (sticky) + метрики; скрываем A,B,C
+// → Подразделения: показываем col B (sticky) + метрики; скрываем A,C (col D оставляем)
+// → Магазины: показываем col B,C,D + метрики; скрываем A
+const SKIP_REGIONS = new Set([0, 1, 2]);   // скрыть A(регион файла), B(ИТОГО), C(РЕГИОН)
+const SKIP_SUBDIVS = new Set([0, 2]);      // скрыть A(регион файла), C(ИМ)
+const SKIP_STORES  = new Set([0]);         // скрыть A(регион файла)
 
 // Sticky column ci per view
 const STICKY_COL_CI = {
-  regions: 0,  // Регион
+  regions: 3,  // ТЦ — содержит «Итого по СИБ», «Итого по СПБ» и т.д.
   subdivs: 1,  // Подразделение
   stores:  3,  // ТЦ
 };
@@ -106,6 +111,8 @@ function SortableTable({
   onFilterChange,
   stickyColCi,
   subdivOptions = [],
+  labelOverrides = {},  // { ci: 'Новый заголовок' }
+  hideCols = new Set(), // дополнительные ci для скрытия (runtime, напр. для БЕЛ)
 }) {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
@@ -121,7 +128,10 @@ function SortableTable({
     }
   }
 
-  const visibleHeaders = headers.filter((_, ci) => !skipCols.has(ci));
+  const effectiveSkip = hideCols.size > 0
+    ? new Set([...skipCols, ...hideCols])
+    : skipCols;
+  const visibleHeaders = headers.filter((_, ci) => !effectiveSkip.has(ci));
 
   const sorted = useMemo(() => {
     if (!sortField) return rows;
@@ -148,7 +158,8 @@ function SortableTable({
             {visibleHeaders.map((h, i) => {
               const ci = headers.indexOf(h);
               const isSticky = ci === stickyColCi;
-              const isTextCol = ci <= 3 && !skipCols.has(ci);
+              const isTextCol = ci <= 3 && !effectiveSkip.has(ci);
+              const displayLabel = labelOverrides[ci] || h;
               return (
                 <th
                   key={i}
@@ -170,7 +181,7 @@ function SortableTable({
                   }}
                 >
                   <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.25' }}>
-                    {h}{sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                    {displayLabel}{sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
                   </div>
                 </th>
               );
@@ -384,7 +395,7 @@ function Top15Table({ stores, headers }) {
 }
 
 // ─── Excel export ──────────────────────────────────────────────────────────────
-function exportToExcel(fileData, title, filteredStores) {
+function exportToExcel(fileData, title, filteredStores, extraHideCols = new Set()) {
   const wb = XLSXStyle.utils.book_new();
   const views = [
     { label: 'Регионы',       rows: fileData.regions, skipCols: SKIP_REGIONS },
@@ -395,8 +406,9 @@ function exportToExcel(fileData, title, filteredStores) {
 
   views.forEach(({ label, rows, skipCols }) => {
     if (!rows || rows.length === 0) return;
-    const visHeaders = headers.filter((_, ci) => !skipCols.has(ci));
-    const visIndices = headers.map((_, ci) => ci).filter(ci => !skipCols.has(ci));
+    const effectiveSkip = extraHideCols.size > 0 ? new Set([...skipCols, ...extraHideCols]) : skipCols;
+    const visHeaders = headers.filter((_, ci) => !effectiveSkip.has(ci));
+    const visIndices = headers.map((_, ci) => ci).filter(ci => !effectiveSkip.has(ci));
     const scales = computeScales(rows, headers);
 
     const wsData = [visHeaders];
@@ -451,8 +463,15 @@ export default function SalesYuiPage({ fileData, title }) {
     );
   }
 
-  const { headers, stores: rawStores, subdivs, regions, periods } = fileData;
+  const { headers, stores: rawStores, subdivs, regions, periods, fileRegion } = fileData;
   const periodInfo = periods && periods.length > 0 ? periods[0] : '';
+
+  // БЕЛ: скрываем Рассрочка % (ci=6) во всех таблицах
+  const isBel = fileRegion === 'БЕЛ';
+  const belHideCols = isBel ? new Set([6]) : new Set();
+
+  // Для таблицы Регионов col D (ci=3) содержит реальное название (Итого по СИБ и т.д.)
+  const regionLabelOverrides = { 3: 'Регион' };
 
   // Filter closed stores (col 2 = Магазин)
   const storeHeader = headers[2] || '';
@@ -496,7 +515,7 @@ export default function SalesYuiPage({ fileData, title }) {
           {periodInfo && <p className="text-xs text-gray-500 mt-0.5">{periodInfo}</p>}
         </div>
         <button
-          onClick={() => exportToExcel(fileData, title, filteredStores)}
+          onClick={() => exportToExcel(fileData, title, filteredStores, belHideCols)}
           className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white"
           style={{ backgroundColor: '#16a34a' }}
         >
@@ -535,6 +554,8 @@ export default function SalesYuiPage({ fileData, title }) {
             headers={headers}
             skipCols={SKIP_REGIONS}
             stickyColCi={STICKY_COL_CI.regions}
+            labelOverrides={regionLabelOverrides}
+            hideCols={belHideCols}
           />
         )}
         {activeView === 'subdivs' && (
@@ -543,6 +564,7 @@ export default function SalesYuiPage({ fileData, title }) {
             headers={headers}
             skipCols={SKIP_SUBDIVS}
             stickyColCi={STICKY_COL_CI.subdivs}
+            hideCols={belHideCols}
           />
         )}
         {activeView === 'stores' && (
@@ -555,6 +577,7 @@ export default function SalesYuiPage({ fileData, title }) {
             onFilterChange={(h, v) => setStoreFilters(prev => ({ ...prev, [h]: v }))}
             stickyColCi={STICKY_COL_CI.stores}
             subdivOptions={subdivOptions}
+            hideCols={belHideCols}
           />
         )}
         {activeView === 'top15' && (
