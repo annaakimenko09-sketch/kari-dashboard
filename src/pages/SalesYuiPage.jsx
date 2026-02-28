@@ -21,7 +21,7 @@ import {
 // Подразделения (regions): скрыть A(регион файла), C(ИМ) → sticky B (название подразделения), показывать D (ТЦ)
 // Магазины: скрыть A(регион файла)
 const SKIP_REGIONS = new Set([0, 1, 2]);   // для subdivs: скрыть A, B(ИТОГО), C(РЕГИОН)
-const SKIP_SUBDIVS = new Set([0, 2]);      // для regions: скрыть A, C(ИМ)
+const SKIP_SUBDIVS = new Set([0, 2, 3]);   // для regions: скрыть A, C(ИМ), D(ТЦ)
 const SKIP_STORES  = new Set([0, 5]);      // скрыть A(регион файла) и ТО ЮИ/ТО (ci=5)
 
 // Sticky columns: первые ДВА видимых текстовых столбца фиксируются
@@ -104,10 +104,16 @@ function gradientHex(val, min, max, invert) {
   return ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0').toUpperCase();
 }
 
-function computeScales(rows, headers) {
+function computeScales(rows, headers, excludeKari = false) {
   const scales = {};
+  const scaleRows = excludeKari
+    ? rows.filter(r => {
+        const name = String(r['_c3'] || '').toLowerCase();
+        return !name.includes('kari') && !name.includes('кари');
+      })
+    : rows;
   headers.forEach((_, ci) => {
-    const vals = rows
+    const vals = scaleRows
       .map(r => r[`_c${ci}`])
       .filter(v => v !== null && v !== undefined && typeof v === 'number');
     if (vals.length === 0) return;
@@ -128,11 +134,12 @@ function SortableTable({
   subdivOptions = [],
   labelOverrides = {},    // { ci: 'Новый заголовок' }
   hideCols = new Set(),   // дополнительные ci для скрытия (runtime)
+  excludeKariFromScales = false, // исключить строку Kari из расчёта шкалы градиента
 }) {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
 
-  const scales = useMemo(() => computeScales(rows, headers), [rows, headers]);
+  const scales = useMemo(() => computeScales(rows, headers, excludeKariFromScales), [rows, headers, excludeKariFromScales]);
 
   function handleSort(h) {
     if (sortField === h) {
@@ -151,20 +158,26 @@ function SortableTable({
     .filter(ci => !effectiveSkip.has(ci));
   const visibleHeaders = visibleCIs.map(ci => headers[ci]);
 
+  // Column widths for sticky offset calculation — must match minWidth in th/td styles
+  // ci=1(Подразд): 110px, ci=2(Магазин): 70px, ci=3(ТЦ): 160px, metric: 60px
+  const COL_WIDTHS = { 1: 110, 2: 70, 3: 160 };
+  function getColWidth(ci) {
+    if (COL_WIDTHS[ci] !== undefined) return COL_WIDTHS[ci];
+    return ci <= 3 ? 110 : 60;
+  }
+
   // Compute left offsets for sticky columns
-  // sticky cols are the visible ones that are in stickyCols set, in order
-  // We need pixel widths — use fixed estimates: text cols 120px, metric cols 60px
   const stickyLeftMap = useMemo(() => {
     const map = {};
     let left = 0;
     for (const ci of visibleCIs) {
       if (stickyCols.has(ci)) {
         map[ci] = left;
-        const isText = ci <= 3;
-        left += isText ? 120 : 60;
+        left += getColWidth(ci);
       }
     }
     return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleCIs, stickyCols]);
 
   const lastStickyCI = useMemo(() => {
@@ -221,7 +234,6 @@ function SortableTable({
           <tr className="bg-gray-50 border-b border-gray-200">
             {visibleCIs.map((ci, i) => {
               const h = headers[ci];
-              const isTextCol = ci <= 3;
               const displayLabel = labelOverrides[ci] || h;
               return (
                 <th
@@ -230,7 +242,8 @@ function SortableTable({
                   className="px-2 py-1.5 text-center font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100"
                   style={{
                     fontSize: '11px',
-                    minWidth: isTextCol ? '110px' : '55px',
+                    minWidth: `${getColWidth(ci)}px`,
+                    width: stickyCols.has(ci) ? `${getColWidth(ci)}px` : undefined,
                     verticalAlign: 'top',
                     padding: '4px',
                     ...getStickyThStyle(ci),
@@ -308,6 +321,7 @@ function SortableTable({
                   const isStickyCol = stickyCols.has(ci);
                   const cellStyle = {
                     fontSize: '11px',
+                    ...(isStickyCol ? { minWidth: `${getColWidth(ci)}px`, width: `${getColWidth(ci)}px` } : {}),
                     ...(gradBg && !isStickyCol ? { backgroundColor: gradBg, color: '#1f2937', fontWeight: '500' } : {}),
                     ...getStickyTdStyle(ci, '#ffffff'),
                   };
@@ -618,6 +632,7 @@ export default function SalesYuiPage({ fileData, title }) {
             stickyCols={STICKY_COLS.regions}
             labelOverrides={regionLabelOverrides}
             hideCols={belHideCols}
+            excludeKariFromScales={true}
           />
         )}
         {activeView === 'subdivs' && (
