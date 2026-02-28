@@ -4,22 +4,25 @@ import { COLS_HIGH_GOOD, COLS_HIGH_BAD } from '../utils/salesParser';
 
 // Columns to hide per view (0-based indices matching Рег sheet headers)
 // A=0 Регион, B=1 Подразделение, C=2 (0/1 flag), D=3 Магазин, E=4 ТЦ
-const SKIP_REGIONS = new Set([1, 2, 3, 4]);     // hide B, C, D, E — only Регион + metrics
-const SKIP_SUBDIVS = new Set([0, 2, 3, 4]);     // hide A, C, D, E — only Подразделение + metrics
-const SKIP_STORES  = new Set([0, 2]);            // hide A, C
+const SKIP_REGIONS = new Set([1, 2, 3, 4]);
+const SKIP_SUBDIVS = new Set([0, 2, 3, 4]);
+const SKIP_STORES  = new Set([0, 2]);
 
-// Which visible column index (after filtering skips) is sticky per view
-// Регионы: col A (Регион) → first visible col (visIdx 0)
-// Подразделения: col B (Подразделение) → first visible col (visIdx 0)
-// Магазины: col E (ТЦ, ci=4) → third visible col (visIdx 2, after B=1 and D=3)
+// Sticky column ci per view
 const STICKY_COL_CI = {
-  regions: 0,   // A — Регион
-  subdivs: 1,   // B — Подразделение
-  stores:  4,   // E — ТЦ
+  regions: 0,  // A — Регион
+  subdivs: 1,  // B — Подразделение
+  stores:  4,  // E — ТЦ
 };
 
+// Closed stores — never show these
+const CLOSED_STORES = new Set([11596, 11787, 50015]);
+
+// ТО LFL column index
+const TO_LFL_CI = 9;
+const TO_LFL_HEADER = 'ТО LFL';
+
 // ─── Percent column detection ──────────────────────────────────────────────────
-// Headers whose values are stored as decimals (0.74 = 74%) and should display as %
 const PERCENT_EXACT = new Set([
   'КОП',
   'КОП обувь',
@@ -33,18 +36,15 @@ function isPercentHeader(h) {
   if (!h) return false;
   if (h.includes('%')) return true;
   if (PERCENT_EXACT.has(h)) return true;
-  // LFL / YTY / growth / share columns are all decimal ratios
   return /LFL|YTY|Рост|Доля/.test(h);
 }
 
 // ─── Gradient helpers ──────────────────────────────────────────────────────────
-// Full Excel color scale: red → orange → yellow → green
-// ratio 0 = red (worst), ratio 1 = green (best)
 const COLOR_STOPS = [
-  [248, 105, 107], // 0.00 red
-  [255, 167,  83], // 0.33 orange
-  [255, 235, 132], // 0.67 yellow
-  [ 99, 190, 123], // 1.00 green
+  [248, 105, 107],
+  [255, 167,  83],
+  [255, 235, 132],
+  [ 99, 190, 123],
 ];
 
 function computeRGB(ratio) {
@@ -78,8 +78,6 @@ function gradientHex(val, min, max, invert) {
   return ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0').toUpperCase();
 }
 
-// ─── Scale computation — per-column, per-view rows, excluding first "total" row ─
-// For Regions view: skip row index 0 (Итого по Kari) from gradient scale of ТО руб (ci=5)
 function computeScales(rows, headers, skipFirstForCols = new Set()) {
   const scales = {};
   headers.forEach((_, ci) => {
@@ -94,22 +92,16 @@ function computeScales(rows, headers, skipFirstForCols = new Set()) {
 }
 
 // ─── Format cell value for display ────────────────────────────────────────────
-// col index 5 = ТО руб. — integer, no decimal
 const TO_RUB_CI = 5;
 
 function fmtVal(v, header) {
   if (v === null || v === undefined || v === '') return '';
   if (typeof v === 'number') {
-    // ТО руб. — integer only
-    if (header === 'ТО руб.') {
-      return Math.round(v).toLocaleString('ru-RU');
-    }
-    // Percent columns — multiply by 100, show with % sign
+    if (header === 'ТО руб.') return Math.round(v).toLocaleString('ru-RU');
     if (isPercentHeader(header)) {
       const pct = v * 100;
       return pct.toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%';
     }
-    // Default numeric
     if (Number.isInteger(v)) return v.toLocaleString('ru-RU');
     return v.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
   }
@@ -125,13 +117,12 @@ function SortableTable({
   filterState = {},
   onFilterChange,
   skipFirstGradientForCols,
-  stickyColCi,         // ci of the column to freeze (sticky left)
-  subdivOptions = [],  // dropdown options for Подразделение filter in Магазины
+  stickyColCi,
+  subdivOptions = [],
 }) {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
 
-  // Compute scales — exclude row 0 from TO_RUB gradient if requested
   const scales = useMemo(
     () => computeScales(rows, headers, skipFirstGradientForCols || new Set()),
     [rows, headers, skipFirstGradientForCols]
@@ -163,8 +154,15 @@ function SortableTable({
     });
   }, [rows, sortField, sortDir]);
 
-  // Подразделение header name (ci=1)
   const subdivHeader = headers[1] || '';
+
+  // Width per column: first 3 visible cols in stores are wider
+  function colWidth(ci, viewSticky) {
+    if (ci === viewSticky) return '130px';
+    // Магазин (ci=3) and ТЦ (ci=4) — wider for stores
+    if (ci === 3) return '70px';
+    return '70px';
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -174,6 +172,8 @@ function SortableTable({
             {visibleHeaders.map((h, i) => {
               const ci = headers.indexOf(h);
               const isSticky = ci === stickyColCi;
+              // First 3 text cols (Подразделение/Магазин/ТЦ) get min 100px
+              const isTextCol = ci <= 4 && !skipCols.has(ci);
               return (
                 <th
                   key={i}
@@ -181,10 +181,9 @@ function SortableTable({
                   className="px-2 py-1.5 text-center font-semibold text-gray-600 cursor-pointer select-none hover:bg-gray-100"
                   style={{
                     fontSize: '11px',
-                    width: '70px',
-                    minWidth: '50px',
-                    maxWidth: isSticky ? '120px' : '90px',
-                    verticalAlign: 'bottom',
+                    minWidth: isTextCol ? '100px' : '50px',
+                    maxWidth: isSticky ? '150px' : '90px',
+                    verticalAlign: 'top',
                     padding: '4px',
                     ...(isSticky ? {
                       position: 'sticky',
@@ -195,11 +194,7 @@ function SortableTable({
                     } : {}),
                   }}
                 >
-                  <div style={{
-                    whiteSpace: 'normal',
-                    wordBreak: 'break-word',
-                    lineHeight: '1.25',
-                  }}>
+                  <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.25' }}>
                     {h}{sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
                   </div>
                 </th>
@@ -264,7 +259,6 @@ function SortableTable({
                 const val = row[`_c${ci}`];
                 const isSticky = ci === stickyColCi;
                 let style = {};
-                // For row index 0 in regions (Итого по Kari): skip gradient on ТО руб (ci=5)
                 const isFirstRow = ri === 0;
                 const skipGrad = isFirstRow && skipFirstGradientForCols && skipFirstGradientForCols.has(ci);
                 if (!skipGrad && typeof val === 'number' && scales[ci]) {
@@ -307,14 +301,105 @@ function SortableTable({
   );
 }
 
+// ─── Top15 table ───────────────────────────────────────────────────────────────
+// Shows top-15 best and top-15 worst by ТО LFL for a given region filter
+function Top15Table({ stores, headers, regionLabel }) {
+  const lflHeader = TO_LFL_HEADER;
+
+  // Determine visible cols for top15: Подразделение, Магазин, ТЦ + ТО LFL + a few key metrics
+  // Show: B(1 Подразд), D(3 Магазин), E(4 ТЦ), F(5 ТО руб), J(9 ТО LFL), H(7 План %), I(8 Рост в ТО)
+  const TOP15_COLS = [1, 3, 4, 5, 7, 8, 9];
+
+  const visHeaders = TOP15_COLS.map(ci => headers[ci]).filter(Boolean);
+
+  const withLfl = useMemo(() => {
+    return (stores || []).filter(row => {
+      const v = row[lflHeader];
+      return v !== null && v !== undefined && typeof v === 'number';
+    });
+  }, [stores, lflHeader]);
+
+  const sorted = useMemo(() => {
+    return [...withLfl].sort((a, b) => {
+      const av = a[lflHeader] ?? -Infinity;
+      const bv = b[lflHeader] ?? -Infinity;
+      return bv - av; // desc: best first
+    });
+  }, [withLfl, lflHeader]);
+
+  const best15  = sorted.slice(0, 15);
+  const worst15 = [...sorted].reverse().slice(0, 15);
+
+  const scales = useMemo(() => computeScales(stores || [], headers), [stores, headers]);
+
+  function renderRows(rows, label, labelColor) {
+    return (
+      <div>
+        <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: labelColor, backgroundColor: labelColor + '15' }}>
+          {label}
+        </div>
+        <table className="text-xs w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              {visHeaders.map((h, i) => (
+                <th key={i} className="px-2 py-1.5 text-center font-semibold text-gray-600"
+                  style={{ fontSize: '11px', minWidth: i <= 2 ? '100px' : '70px', verticalAlign: 'top' }}>
+                  <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.25' }}>{h}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">
+                {TOP15_COLS.map((ci, i) => {
+                  const h = headers[ci];
+                  if (!h) return null;
+                  const val = row[`_c${ci}`];
+                  let style = {};
+                  if (typeof val === 'number' && scales[ci]) {
+                    if (COLS_HIGH_GOOD.has(ci) || COLS_HIGH_BAD.has(ci)) {
+                      style = gradientStyle(val, scales[ci].min, scales[ci].max, COLS_HIGH_BAD.has(ci));
+                    }
+                  }
+                  return (
+                    <td key={i} className="px-2 py-1 text-center" style={{ ...style, fontSize: '11px' }}>
+                      {fmtVal(row[h], h)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr><td colSpan={visHeaders.length} className="px-4 py-4 text-center text-gray-400">Нет данных</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-sm font-bold text-gray-700 px-1">{regionLabel}</h2>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
+        {renderRows(best15, '15 лучших по ТО LFL', '#16a34a')}
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
+        {renderRows(worst15, '15 худших по ТО LFL', '#dc2626')}
+      </div>
+    </div>
+  );
+}
+
 // ─── Excel export ──────────────────────────────────────────────────────────────
-function exportToExcel(fileData, title) {
+function exportToExcel(fileData, title, filteredStores) {
   const wb = XLSXStyle.utils.book_new();
 
   const views = [
-    { label: 'Регионы',       rows: fileData.regions, skipCols: SKIP_REGIONS, skipFirstGrad: new Set([TO_RUB_CI]) },
-    { label: 'Подразделения', rows: fileData.subdivs, skipCols: SKIP_SUBDIVS, skipFirstGrad: new Set() },
-    { label: 'Магазины',      rows: fileData.stores,  skipCols: SKIP_STORES,  skipFirstGrad: new Set() },
+    { label: 'Регионы',       rows: fileData.regions,  skipCols: SKIP_REGIONS, skipFirstGrad: new Set([TO_RUB_CI]) },
+    { label: 'Подразделения', rows: fileData.subdivs,  skipCols: SKIP_SUBDIVS, skipFirstGrad: new Set() },
+    { label: 'Магазины',      rows: filteredStores,    skipCols: SKIP_STORES,  skipFirstGrad: new Set() },
   ];
 
   const headers = fileData.headers;
@@ -332,34 +417,39 @@ function exportToExcel(fileData, title) {
       wsData.push(visHeaders.map(h => {
         const v = row[h];
         if (typeof v !== 'number') return v !== null && v !== undefined ? v : '';
+        // All numbers: integer (no decimals), spaces as thousands separator
         if (h === 'ТО руб.') return Math.round(v);
         if (isPercentHeader(h)) return parseFloat((v * 100).toFixed(1));
-        return v;
+        // Other numbers: round to integer
+        return Number.isInteger(v) ? v : parseFloat(v.toFixed(0));
       }));
     });
 
     const ws = XLSXStyle.utils.aoa_to_sheet(wsData);
 
+    // Apply number format with space thousands separator to all numeric cells
     for (let ri = 1; ri < wsData.length; ri++) {
       visIndices.forEach((ci, vci) => {
+        const cellAddr = XLSXStyle.utils.encode_cell({ r: ri, c: vci });
+        if (!ws[cellAddr]) return;
+        const cellVal = ws[cellAddr].v;
+        if (typeof cellVal !== 'number') return;
+
         const row = rows[ri - 1];
         const val = row[`_c${ci}`];
-        if (typeof val !== 'number') return;
-        if (!scales[ci]) return;
-        if (!COLS_HIGH_GOOD.has(ci) && !COLS_HIGH_BAD.has(ci)) return;
-        // Skip gradient for first row on excluded cols
-        if (ri === 1 && skipFirstGrad.has(ci)) return;
-
         const invert = COLS_HIGH_BAD.has(ci);
-        const hex = gradientHex(val, scales[ci].min, scales[ci].max, invert);
-        if (!hex) return;
+        let bgHex = null;
+        if (typeof val === 'number' && scales[ci] && (COLS_HIGH_GOOD.has(ci) || COLS_HIGH_BAD.has(ci))) {
+          if (!(ri === 1 && skipFirstGrad.has(ci))) {
+            bgHex = gradientHex(val, scales[ci].min, scales[ci].max, invert);
+          }
+        }
 
-        const cellAddr = XLSXStyle.utils.encode_cell({ r: ri, c: vci });
-        if (!ws[cellAddr]) ws[cellAddr] = { v: wsData[ri][vci], t: 'n' };
         ws[cellAddr].s = {
-          fill: { patternType: 'solid', fgColor: { rgb: hex } },
+          ...(bgHex ? { fill: { patternType: 'solid', fgColor: { rgb: bgHex } } } : {}),
           font: { color: { rgb: '1F2937' } },
           alignment: { horizontal: 'center' },
+          numFmt: '# ##0',
         };
       });
     }
@@ -371,8 +461,7 @@ function exportToExcel(fileData, title) {
 }
 
 // ─── Main SalesPage component ──────────────────────────────────────────────────
-// Columns to exclude from gradient for row 0 (Итого по Kari) in Regions view
-const REGIONS_SKIP_FIRST_GRAD = new Set([TO_RUB_CI]); // ТО руб
+const REGIONS_SKIP_FIRST_GRAD = new Set([TO_RUB_CI]);
 
 export default function SalesPage({ fileData, title }) {
   const [activeView, setActiveView] = useState('regions');
@@ -387,11 +476,19 @@ export default function SalesPage({ fileData, title }) {
     );
   }
 
-  const { headers, stores, subdivs, regions, periods } = fileData;
+  const { headers, stores: rawStores, subdivs, regions, periods } = fileData;
   const periodInfo = periods && periods.length > 0 ? periods[0] : '';
 
-  // Unique subdivision values for dropdown in Магазины tab
-  // Подразделение is at ci=1, header name = headers[1]
+  // Filter out closed stores
+  const storeHeader = headers[3] || '';
+  const stores = useMemo(() => {
+    return (rawStores || []).filter(row => {
+      const storeNum = row[storeHeader];
+      const n = storeNum !== null && storeNum !== undefined ? Number(storeNum) : NaN;
+      return !CLOSED_STORES.has(n);
+    });
+  }, [rawStores, storeHeader]);
+
   const subdivHeader = headers[1] || '';
   const subdivOptions = useMemo(() => {
     if (!stores || !subdivHeader) return [];
@@ -402,7 +499,7 @@ export default function SalesPage({ fileData, title }) {
   }, [stores, subdivHeader]);
 
   const filteredStores = useMemo(() => {
-    return (stores || []).filter(row =>
+    return stores.filter(row =>
       Object.entries(storeFilters).every(([h, val]) => {
         if (!val) return true;
         const v = row[h];
@@ -436,7 +533,7 @@ export default function SalesPage({ fileData, title }) {
           {periodInfo && <p className="text-xs text-gray-500 mt-0.5">{periodInfo}</p>}
         </div>
         <button
-          onClick={() => exportToExcel(fileData, title)}
+          onClick={() => exportToExcel(fileData, title, filteredStores)}
           className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white"
           style={{ backgroundColor: '#16a34a' }}
         >
@@ -450,6 +547,7 @@ export default function SalesPage({ fileData, title }) {
           { key: 'regions', label: 'Регионы' },
           { key: 'subdivs', label: 'Подразделения' },
           { key: 'stores',  label: 'Магазины' },
+          { key: 'top15',   label: 'Топ-15 LFL' },
         ].map(tab => (
           <button
             key={tab.key}
@@ -461,13 +559,15 @@ export default function SalesPage({ fileData, title }) {
             }`}
           >
             {tab.label}
-            <span className="ml-1 text-gray-400 font-normal">({tabCounts[tab.key]})</span>
+            {tab.key !== 'top15' && (
+              <span className="ml-1 text-gray-400 font-normal">({tabCounts[tab.key]})</span>
+            )}
           </button>
         ))}
       </div>
 
       {/* Content */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className={activeView !== 'top15' ? 'bg-white rounded-xl border border-gray-200 overflow-hidden' : ''}>
         {activeView === 'regions' && (
           <SortableTable
             rows={regions || []}
@@ -482,9 +582,6 @@ export default function SalesPage({ fileData, title }) {
             rows={filteredSubdivs}
             headers={headers}
             skipCols={SKIP_SUBDIVS}
-            showFilters={true}
-            filterState={subdivFilters}
-            onFilterChange={(h, v) => setSubdivFilters(prev => ({ ...prev, [h]: v }))}
             stickyColCi={STICKY_COL_CI.subdivs}
           />
         )}
@@ -499,6 +596,15 @@ export default function SalesPage({ fileData, title }) {
             stickyColCi={STICKY_COL_CI.stores}
             subdivOptions={subdivOptions}
           />
+        )}
+        {activeView === 'top15' && (
+          <div className="space-y-6">
+            <Top15Table
+              stores={stores}
+              headers={headers}
+              regionLabel={title}
+            />
+          </div>
         )}
       </div>
     </div>
