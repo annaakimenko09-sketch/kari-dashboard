@@ -1,0 +1,365 @@
+import { useState, useMemo } from 'react';
+import * as XLSXStyle from 'xlsx-js-style';
+import { COLS_HIGH_GOOD, COLS_HIGH_BAD } from '../utils/salesParser';
+
+// ─── Gradient helpers ──────────────────────────────────────────────────────────
+function computeRGB(ratio) {
+  const r = Math.round(255 * (1 - ratio));
+  const g = Math.round(200 * ratio);
+  const b = 60;
+  return [r, g, b];
+}
+
+function gradientStyleGood(val, min, max) {
+  if (min === max || val === null || val === undefined) return {};
+  const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
+  const [r, g, b] = computeRGB(ratio);
+  return { backgroundColor: `rgb(${r},${g},${b})`, color: '#111827' };
+}
+
+function gradientStyleBad(val, min, max) {
+  if (min === max || val === null || val === undefined) return {};
+  // higher = worse = red → invert ratio
+  const ratio = 1 - Math.max(0, Math.min(1, (val - min) / (max - min)));
+  const [r, g, b] = computeRGB(ratio);
+  return { backgroundColor: `rgb(${r},${g},${b})`, color: '#111827' };
+}
+
+function gradientHexGood(val, min, max) {
+  if (min === max || val === null || val === undefined) return null;
+  const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
+  const [r, g, b] = computeRGB(ratio);
+  return ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0').toUpperCase();
+}
+
+function gradientHexBad(val, min, max) {
+  if (min === max || val === null || val === undefined) return null;
+  const ratio = 1 - Math.max(0, Math.min(1, (val - min) / (max - min)));
+  const [r, g, b] = computeRGB(ratio);
+  return ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0').toUpperCase();
+}
+
+// ─── Scale computation ─────────────────────────────────────────────────────────
+function computeScales(rows, headers) {
+  const scales = {};
+  headers.forEach((h, ci) => {
+    const vals = rows.map(r => r[`_c${ci}`]).filter(v => v !== null && v !== undefined && typeof v === 'number');
+    if (vals.length === 0) return;
+    scales[ci] = { min: Math.min(...vals), max: Math.max(...vals) };
+  });
+  return scales;
+}
+
+// ─── Format cell value for display ────────────────────────────────────────────
+function fmtVal(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (typeof v === 'number') {
+    if (Number.isInteger(v)) return v.toLocaleString('ru-RU');
+    return v.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+  }
+  return String(v);
+}
+
+// ─── SortableTable ─────────────────────────────────────────────────────────────
+function SortableTable({ rows, headers, scales, skipCols = new Set(), showFilters = false, filterState = {}, onFilterChange }) {
+  const [sortField, setSortField] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+
+  function handleSort(h) {
+    if (sortField === h) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(h);
+      setSortDir('asc');
+    }
+  }
+
+  const visibleHeaders = headers.filter((_, ci) => !skipCols.has(ci));
+
+  const sorted = useMemo(() => {
+    if (!sortField) return rows;
+    return [...rows].sort((a, b) => {
+      const av = a[sortField], bv = b[sortField];
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') {
+        return sortDir === 'asc' ? av - bv : bv - av;
+      }
+      return sortDir === 'asc'
+        ? String(av).localeCompare(String(bv), 'ru')
+        : String(bv).localeCompare(String(av), 'ru');
+    });
+  }, [rows, sortField, sortDir]);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="text-xs w-full border-collapse" style={{ tableLayout: 'auto', minWidth: '800px' }}>
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-200">
+            {visibleHeaders.map((h, i) => {
+              const ci = headers.indexOf(h);
+              return (
+                <th
+                  key={i}
+                  onClick={() => handleSort(h)}
+                  className="px-2 py-1.5 text-left font-semibold text-gray-600 cursor-pointer select-none whitespace-nowrap hover:bg-gray-100"
+                  style={{ fontSize: '11px' }}
+                >
+                  {h}
+                  {sortField === h ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                </th>
+              );
+            })}
+          </tr>
+          {showFilters && (
+            <tr className="bg-gray-50 border-b border-gray-200">
+              {visibleHeaders.map((h, i) => {
+                const ci = headers.indexOf(h);
+                // Only show text filters for first few string columns
+                if (ci > 4) return <th key={i} className="px-1 py-0.5" />;
+                return (
+                  <th key={i} className="px-1 py-0.5">
+                    <input
+                      type="text"
+                      value={filterState[h] || ''}
+                      onChange={e => onFilterChange(h, e.target.value)}
+                      placeholder="Фильтр"
+                      className="w-full text-xs px-1 py-0.5 border border-gray-300 rounded"
+                    />
+                  </th>
+                );
+              })}
+            </tr>
+          )}
+        </thead>
+        <tbody>
+          {sorted.map((row, ri) => (
+            <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">
+              {visibleHeaders.map((h, i) => {
+                const ci = headers.indexOf(h);
+                const val = row[`_c${ci}`];
+                const numVal = typeof val === 'number' ? val : null;
+                let style = {};
+                if (numVal !== null && scales[ci]) {
+                  if (COLS_HIGH_GOOD.has(ci)) {
+                    style = gradientStyleGood(numVal, scales[ci].min, scales[ci].max);
+                  } else if (COLS_HIGH_BAD.has(ci)) {
+                    style = gradientStyleBad(numVal, scales[ci].min, scales[ci].max);
+                  }
+                }
+                return (
+                  <td key={i} className="px-2 py-1 whitespace-nowrap" style={style}>
+                    {fmtVal(row[h])}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {sorted.length === 0 && (
+            <tr>
+              <td colSpan={visibleHeaders.length} className="px-4 py-8 text-center text-gray-400">
+                Нет данных
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Excel export ──────────────────────────────────────────────────────────────
+function exportToExcel(fileData, title) {
+  const wb = XLSXStyle.utils.book_new();
+
+  const views = [
+    { key: 'regions',  label: 'Регионы',        rows: fileData.regions,  skipCols: new Set([2]) },
+    { key: 'subdivs',  label: 'Подразделения',   rows: fileData.subdivs,  skipCols: new Set([2]) },
+    { key: 'stores',   label: 'Магазины',        rows: fileData.stores,   skipCols: new Set([2]) },
+  ];
+
+  const headers = fileData.headers;
+  const allRows = [...fileData.regions, ...fileData.subdivs, ...fileData.stores];
+
+  views.forEach(({ label, rows, skipCols }) => {
+    if (!rows || rows.length === 0) return;
+
+    const visHeaders = headers.filter((_, ci) => !skipCols.has(ci));
+    const visIndices = headers.map((_, ci) => ci).filter(ci => !skipCols.has(ci));
+
+    // Compute scales from all rows (global)
+    const scales = computeScales(allRows, headers);
+
+    const wsData = [visHeaders];
+    rows.forEach(row => {
+      wsData.push(visHeaders.map(h => {
+        const v = row[h];
+        return v !== null && v !== undefined ? v : '';
+      }));
+    });
+
+    const ws = XLSXStyle.utils.aoa_to_sheet(wsData);
+
+    // Apply conditional formatting styles
+    for (let ri = 1; ri < wsData.length; ri++) {
+      visIndices.forEach((ci, vci) => {
+        const row = rows[ri - 1];
+        const val = row[`_c${ci}`];
+        if (typeof val !== 'number') return;
+        if (!scales[ci]) return;
+
+        let hex = null;
+        if (COLS_HIGH_GOOD.has(ci)) {
+          hex = gradientHexGood(val, scales[ci].min, scales[ci].max);
+        } else if (COLS_HIGH_BAD.has(ci)) {
+          hex = gradientHexBad(val, scales[ci].min, scales[ci].max);
+        }
+        if (!hex) return;
+
+        const cellAddr = XLSXStyle.utils.encode_cell({ r: ri, c: vci });
+        if (!ws[cellAddr]) ws[cellAddr] = { v: val, t: 'n' };
+        ws[cellAddr].s = {
+          fill: { patternType: 'solid', fgColor: { rgb: hex } },
+          font: { color: { rgb: '111827' } },
+          alignment: { horizontal: 'center' },
+        };
+      });
+    }
+
+    XLSXStyle.utils.book_append_sheet(wb, ws, label.substring(0, 31));
+  });
+
+  const fname = `${title}.xlsx`;
+  XLSXStyle.writeFile(wb, fname);
+}
+
+// ─── Main SalesPage component ──────────────────────────────────────────────────
+export default function SalesPage({ fileData, title }) {
+  const [activeView, setActiveView] = useState('regions');
+  const [storeFilters, setStoreFilters] = useState({});
+  const [subdivFilters, setSubdivFilters] = useState({});
+
+  if (!fileData) {
+    return (
+      <div className="p-6 text-gray-500 text-sm">
+        Загрузите файл отчёта по продажам ({title}).
+      </div>
+    );
+  }
+
+  const { headers, stores, subdivs, regions, periods } = fileData;
+
+  // Skip col index 2 (0/1 flag column)
+  const SKIP = new Set([2]);
+
+  // Compute scales from all data
+  const allRows = [...(regions || []), ...(subdivs || []), ...(stores || [])];
+  const scales = useMemo(() => computeScales(allRows, headers), [fileData]);
+
+  // Apply text filters to stores
+  const filteredStores = useMemo(() => {
+    return (stores || []).filter(row => {
+      return Object.entries(storeFilters).every(([h, val]) => {
+        if (!val) return true;
+        const v = row[h];
+        return v !== null && v !== undefined && String(v).toLowerCase().includes(val.toLowerCase());
+      });
+    });
+  }, [stores, storeFilters]);
+
+  const filteredSubdivs = useMemo(() => {
+    return (subdivs || []).filter(row => {
+      return Object.entries(subdivFilters).every(([h, val]) => {
+        if (!val) return true;
+        const v = row[h];
+        return v !== null && v !== undefined && String(v).toLowerCase().includes(val.toLowerCase());
+      });
+    });
+  }, [subdivs, subdivFilters]);
+
+  const periodInfo = periods && periods.length > 0 ? periods[0] : '';
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-lg font-bold text-gray-800">{title}</h1>
+          {periodInfo && (
+            <p className="text-xs text-gray-500 mt-0.5">{periodInfo}</p>
+          )}
+        </div>
+        <button
+          onClick={() => exportToExcel(fileData, title)}
+          className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white"
+          style={{ backgroundColor: '#16a34a' }}
+        >
+          Выгрузить Excel
+        </button>
+      </div>
+
+      {/* View tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {[
+          { key: 'regions', label: 'Регионы' },
+          { key: 'subdivs', label: 'Подразделения' },
+          { key: 'stores',  label: 'Магазины' },
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveView(tab.key)}
+            className={`px-4 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors ${
+              activeView === tab.key
+                ? 'border-[#16a34a] text-[#16a34a]'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab.label}
+            <span className="ml-1 text-gray-400 font-normal">
+              ({activeView === 'regions' && tab.key === 'regions' ? regions?.length ?? 0
+                : activeView === 'subdivs' && tab.key === 'subdivs' ? filteredSubdivs.length
+                : activeView === 'stores' && tab.key === 'stores' ? filteredStores.length
+                : tab.key === 'regions' ? regions?.length ?? 0
+                : tab.key === 'subdivs' ? subdivs?.length ?? 0
+                : stores?.length ?? 0})
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {activeView === 'regions' && (
+          <SortableTable
+            rows={regions || []}
+            headers={headers}
+            scales={scales}
+            skipCols={SKIP}
+          />
+        )}
+        {activeView === 'subdivs' && (
+          <SortableTable
+            rows={filteredSubdivs}
+            headers={headers}
+            scales={scales}
+            skipCols={SKIP}
+            showFilters={true}
+            filterState={subdivFilters}
+            onFilterChange={(h, v) => setSubdivFilters(prev => ({ ...prev, [h]: v }))}
+          />
+        )}
+        {activeView === 'stores' && (
+          <SortableTable
+            rows={filteredStores}
+            headers={headers}
+            scales={scales}
+            skipCols={SKIP}
+            showFilters={true}
+            filterState={storeFilters}
+            onFilterChange={(h, v) => setStoreFilters(prev => ({ ...prev, [h]: v }))}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

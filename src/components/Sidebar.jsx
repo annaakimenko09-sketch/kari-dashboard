@@ -21,6 +21,16 @@ const BRAND = '#E91E8C';
 
 const sections = [
   {
+    label: 'Продажи',
+    color: '#dc2626',
+    items: [
+      { path: '/sales/day/spb',   label: 'День СПБ',   icon: BarChart2 },
+      { path: '/sales/day/bel',   label: 'День БЕЛ',   icon: BarChart2 },
+      { path: '/sales/month/spb', label: 'Месяц СПБ',  icon: BarChart2 },
+      { path: '/sales/month/bel', label: 'Месяц БЕЛ',  icon: BarChart2 },
+    ],
+  },
+  {
     label: 'Адресное ЮИ',
     color: '#f59e0b',
     items: [
@@ -97,11 +107,11 @@ const sections = [
 ];
 
 // Which section labels to show as expandable groups (not standalone items)
-const GROUP_LABELS = ['Адресное ЮИ', 'Вывозы на МП Обувь', 'Вывозы на МП КИДС', 'Наполненность Обувь', 'Адресное Обувь', 'Адресное ИЗ', 'Цены на полупарах', 'Адресное Капсулы'];
+const GROUP_LABELS = ['Продажи', 'Адресное ЮИ', 'Вывозы на МП Обувь', 'Вывозы на МП КИДС', 'Наполненность Обувь', 'Адресное Обувь', 'Адресное ИЗ', 'Цены на полупарах', 'Адресное Капсулы'];
 
 export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) {
   // Track expanded groups
-  const [expanded, setExpanded] = useState({ 'Адресное ЮИ': true, 'Вывозы на МП Обувь': true, 'Вывозы на МП КИДС': true, 'Наполненность Обувь': true, 'Адресное Обувь': true, 'Адресное ИЗ': true, 'Цены на полупарах': true, 'Адресное Капсулы': true });
+  const [expanded, setExpanded] = useState({ 'Продажи': true, 'Адресное ЮИ': true, 'Вывозы на МП Обувь': true, 'Вывозы на МП КИДС': true, 'Наполненность Обувь': true, 'Адресное Обувь': true, 'Адресное ИЗ': true, 'Цены на полупарах': true, 'Адресное Капсулы': true });
 
   function toggleGroup(label) {
     setExpanded(prev => ({ ...prev, [label]: !prev[label] }));

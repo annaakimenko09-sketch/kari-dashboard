@@ -21,9 +21,13 @@ import PricingSpbPage    from './pages/PricingSpbPage';
 import PricingBelPage    from './pages/PricingBelPage';
 import FillingSpbPage    from './pages/FillingSpbPage';
 import FillingBelPage    from './pages/FillingBelPage';
-import IZSpbPage        from './pages/IZSpbPage';
-import IZBelPage        from './pages/IZBelPage';
-import UploadPage         from './pages/UploadPage';
+import IZSpbPage            from './pages/IZSpbPage';
+import IZBelPage            from './pages/IZBelPage';
+import SalesDaySpbPage      from './pages/SalesDaySpbPage';
+import SalesDayBelPage      from './pages/SalesDayBelPage';
+import SalesMonthSpbPage    from './pages/SalesMonthSpbPage';
+import SalesMonthBelPage    from './pages/SalesMonthBelPage';
+import UploadPage            from './pages/UploadPage';
 
 export default function App() {
   return (
@@ -73,6 +77,12 @@ export default function App() {
                 {/* Адресное ИЗ */}
                 <Route path="iz/spb" element={<ErrorBoundary><IZSpbPage /></ErrorBoundary>} />
                 <Route path="iz/bel" element={<ErrorBoundary><IZBelPage /></ErrorBoundary>} />
+
+                {/* Продажи */}
+                <Route path="sales/day/spb"   element={<ErrorBoundary><SalesDaySpbPage /></ErrorBoundary>} />
+                <Route path="sales/day/bel"   element={<ErrorBoundary><SalesDayBelPage /></ErrorBoundary>} />
+                <Route path="sales/month/spb" element={<ErrorBoundary><SalesMonthSpbPage /></ErrorBoundary>} />
+                <Route path="sales/month/bel" element={<ErrorBoundary><SalesMonthBelPage /></ErrorBoundary>} />
 
                 {/* Загрузка */}
                 <Route path="upload"       element={<ErrorBoundary><UploadPage /></ErrorBoundary>} />

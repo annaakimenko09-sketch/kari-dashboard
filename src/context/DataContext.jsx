@@ -6,6 +6,7 @@ import { parseCapsuleFiles } from '../utils/capsuleParser';
 import { parsePricingFiles } from '../utils/pricingParser';
 import { parseFillingFiles } from '../utils/fillingParser';
 import { parseIZFiles } from '../utils/izParser';
+import { parseSalesFiles } from '../utils/salesParser';
 
 const DataContext = createContext(null);
 
@@ -20,6 +21,7 @@ export function DataProvider({ children }) {
   const [pricingFiles, setPricingFiles] = useState([]);    // Цены на полупарах
   const [fillingFiles, setFillingFiles] = useState([]);    // Наполненность обувь
   const [izFiles, setIzFiles] = useState([]);              // Адресное ИЗ
+  const [salesFiles, setSalesFiles] = useState([]);        // Продажи
 
   const loadFiles = useCallback(async (fileList) => {
     setLoading(true);
@@ -36,7 +38,12 @@ export function DataProvider({ children }) {
       const isPricing   = f => f.name.toLowerCase().includes('полупарк') || f.name.toLowerCase().includes('переоценк');
       const isFilling   = f => f.name.toLowerCase().includes('наполненност');
       const isIZ        = f => f.name.toLowerCase().includes('интернет заказ');
-      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f) && !isPricing(f) && !isFilling(f) && !isIZ(f);
+      const isSales     = f => {
+        const n = f.name.toUpperCase();
+        return (n.startsWith('ДЕНЬ_') || n.startsWith('МЕСЯЦ_')) &&
+          (n.includes('СПБ') || n.includes('БЕЛ'));
+      };
+      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f) && !isPricing(f) && !isFilling(f) && !isIZ(f) && !isSales(f);
 
       const scanList    = all.filter(isScanning);
       const jewelryList = all.filter(isJewelry);
@@ -44,6 +51,7 @@ export function DataProvider({ children }) {
       const pricingList = all.filter(isPricing);
       const fillingList = all.filter(isFilling);
       const izList      = all.filter(isIZ);
+      const salesList   = all.filter(isSales);
       const reportList  = all.filter(isReport);
 
       if (reportList.length > 0) {
@@ -74,6 +82,10 @@ export function DataProvider({ children }) {
       if (izList.length > 0) {
         const izResults = await parseIZFiles(izList);
         if (izResults.length > 0) setIzFiles(izResults);
+      }
+      if (salesList.length > 0) {
+        const salesResults = await parseSalesFiles(salesList);
+        if (salesResults.length > 0) setSalesFiles(salesResults);
       }
     } catch (err) {
       setError(err.message || 'Ошибка при загрузке файлов');
@@ -177,6 +189,12 @@ export function DataProvider({ children }) {
     || izFiles.find(f => f.fileRegion === 'ALL')
     || null;
 
+  // Sales helpers
+  const spbSalesDay   = salesFiles.find(f => f.fileRegion === 'СПБ' && f.filePeriod === 'ДЕНЬ')   || null;
+  const belSalesDay   = salesFiles.find(f => f.fileRegion === 'БЕЛ' && f.filePeriod === 'ДЕНЬ')   || null;
+  const spbSalesMonth = salesFiles.find(f => f.fileRegion === 'СПБ' && f.filePeriod === 'МЕСЯЦ')  || null;
+  const belSalesMonth = salesFiles.find(f => f.fileRegion === 'БЕЛ' && f.filePeriod === 'МЕСЯЦ')  || null;
+
   return (
     <DataContext.Provider value={{
       parsedFiles,
@@ -218,6 +236,11 @@ export function DataProvider({ children }) {
       izFiles,
       spbIZ,
       belIZ,
+      salesFiles,
+      spbSalesDay,
+      belSalesDay,
+      spbSalesMonth,
+      belSalesMonth,
     }}>
       {children}
     </DataContext.Provider>
