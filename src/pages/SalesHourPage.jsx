@@ -367,11 +367,11 @@ function SortableTable({
 }
 
 // ─── Top15 sub-table (sortable) ────────────────────────────────────────────────
-// Show: subdivision(0), ТЦ(2), Ср ТО с НДС, ЮИ %, Серебро %, Золото %
+// Show: subdivision(0), store num(1), ТЦ(2), Ср ТО с НДС, ЮИ %, Серебро %, Золото %
 const TOP15_DATA_HEADERS = ['Ср ТО с НДС', 'Ср. ТО с НДС', 'ЮИ, %', 'ЮИ %', 'Серебро, %', 'Золото, %'];
 
 function getTop15Cols(headers) {
-  const fixed = [0, 2];
+  const fixed = [0, 1, 2];
   const data = TOP15_DATA_HEADERS
     .map(h => headers.indexOf(h))
     .filter(ci => ci >= 0);
