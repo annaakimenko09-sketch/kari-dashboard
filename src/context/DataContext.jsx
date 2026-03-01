@@ -108,11 +108,8 @@ export function DataProvider({ children }) {
         const salesYuiResults = await parseSalesYuiFiles(salesYuiList);
         if (salesYuiResults.length > 0) setSalesYuiFiles(salesYuiResults);
       }
-      console.log('[DataContext] salesHourList:', salesHourList.map(f => f.name));
-      console.log('[DataContext] all files:', all.map(f => f.name));
       if (salesHourList.length > 0) {
         const salesHourResults = await parseSalesHourFiles(salesHourList);
-        console.log('[DataContext] salesHourResults:', salesHourResults.length);
         if (salesHourResults.length > 0) setSalesHourFiles(salesHourResults);
       }
     } catch (err) {
@@ -138,13 +135,6 @@ export function DataProvider({ children }) {
   const summaryData = mergeSummaryData(parsedFiles);
   const detailData = mergeDetailData(parsedFiles);
   const regionTotals = mergeRegionTotals(parsedFiles);
-
-  // Debug: log column names from first summary row
-  if (summaryData.length > 0) {
-    console.log('[DataContext] Columns:', Object.keys(summaryData[0]));
-    console.log('[DataContext] First row sample:', summaryData[0]);
-    console.log('[DataContext] Summary rows:', summaryData.length, '| RegionTotals:', regionTotals.length);
-  }
 
   // All regions (for global KPIs and region breakdown) — store rows
   const allSummary = summaryData;

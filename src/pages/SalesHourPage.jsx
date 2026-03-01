@@ -1,18 +1,20 @@
 import { useState, useMemo } from 'react';
 import * as XLSXStyle from 'xlsx-js-style';
-import { COLS_HIGH_GOOD, COLS_HIGH_BAD } from '../utils/salesHourParser';
 
-// Columns to hide per view (0-based indices matching Рег sheet headers)
-// A=0 Регион, B=1 Подразделение, C=2 (0/1 flag), D=3 Магазин, E=4 ТЦ
-const SKIP_REGIONS = new Set([1, 2, 3, 4]);
-const SKIP_SUBDIVS = new Set([0, 2, 3, 4]);
-const SKIP_STORES  = new Set([0, 2]);
+// Column layout for «По часу» sheet «Регион»:
+// A=0 Подразделение, B=1 Магазин(num), C=2 ТЦ/RegionLabel, D+=3 data columns
+// Region rows have A=ИТОГО, B=ИТОГО, C=region label
+
+// Columns to hide per view (0-based indices)
+const SKIP_REGIONS = new Set([0, 1]);   // hide A(ИТОГО) and B(ИТОГО), show C(region) + data
+const SKIP_SUBDIVS = new Set([]);       // no subdivisions in this format
+const SKIP_STORES  = new Set([1]);      // hide B (store number), show A(subdivison) + C(ТЦ) + data
 
 // Sticky column ci per view
 const STICKY_COL_CI = {
-  regions: 0,  // A — Регион
-  subdivs: 1,  // B — Подразделение
-  stores:  4,  // E — ТЦ
+  regions: 2,  // C — region label
+  subdivs: 0,  // not used
+  stores:  2,  // C — ТЦ name
 };
 
 // Closed stores — never show these
@@ -97,15 +99,17 @@ function percentile(sorted, p) {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
 }
 
-function computeScales(rows, headers, excludeKari = false) {
+function computeScales(rows, headers, excludeKari = false, kariColCi = 0) {
   const scales = {};
   const scaleRows = excludeKari
     ? rows.filter(r => {
-        const name = String(r['_c0'] || '').toLowerCase();
+        const name = String(r[`_c${kariColCi}`] || '').toLowerCase();
         return !name.includes('kari') && !name.includes('кари');
       })
     : rows;
   headers.forEach((_, ci) => {
+    // Only compute scales for data columns (index 3+)
+    if (ci < 3) return;
     const vals = scaleRows
       .map(r => r[`_c${ci}`])
       .filter(v => v !== null && v !== undefined && typeof v === 'number')
@@ -144,13 +148,15 @@ function SortableTable({
   stickyColCi,
   subdivOptions = [],
   excludeKariFromScales = false,
+  // kariColCi: column index used to detect Kari row (default 0, regions use 2)
+  kariColCi = 0,
 }) {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
 
   const scales = useMemo(
-    () => computeScales(rows, headers, excludeKariFromScales),
-    [rows, headers, excludeKariFromScales]
+    () => computeScales(rows, headers, excludeKariFromScales, kariColCi),
+    [rows, headers, excludeKariFromScales, kariColCi]
   );
 
   function handleSort(h) {
@@ -269,7 +275,7 @@ function SortableTable({
         </thead>
         <tbody>
           {sorted.map((row, ri) => {
-            const rowName = String(row['_c0'] || '').toLowerCase();
+            const rowName = String(row[`_c${kariColCi}`] || '').toLowerCase();
             const isKariRow = rowName.includes('kari') || rowName.includes('кари');
             return (
               <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">
@@ -278,11 +284,10 @@ function SortableTable({
                   const val = row[`_c${ci}`];
                   const isSticky = ci === stickyColCi;
                   let gradBg = null;
-                  if (!isKariRow && typeof val === 'number' && scales[ci]) {
-                    if (COLS_HIGH_GOOD.has(ci) || COLS_HIGH_BAD.has(ci)) {
-                      const gs = gradientStyle(val, scales[ci].min, scales[ci].max, COLS_HIGH_BAD.has(ci));
-                      gradBg = gs.backgroundColor;
-                    }
+                  // Apply gradient to all numeric data columns (index 3+)
+                  if (!isKariRow && ci >= 3 && typeof val === 'number' && scales[ci]) {
+                    const gs = gradientStyle(val, scales[ci].min, scales[ci].max, false);
+                    gradBg = gs.backgroundColor;
                   }
                   return (
                     <td
@@ -321,13 +326,22 @@ function SortableTable({
 }
 
 // ─── Top15 sub-table (sortable) ────────────────────────────────────────────────
-const TOP15_COLS = [1, 3, 4, 5, 7, 8, 9];
+// Show: subdivision(0), ТЦ(2), and first 8 data cols (3–10)
+function getTop15Cols(headers) {
+  const fixed = [0, 2];
+  const data = headers
+    .map((_, ci) => ci)
+    .filter(ci => ci >= 3)
+    .slice(0, 8);
+  return [...fixed, ...data];
+}
 
 function Top15SubTable({ rows, headers, scales, label, labelColor }) {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir]   = useState('desc');
 
-  const visHeaders = TOP15_COLS.map(ci => headers[ci]).filter(Boolean);
+  const top15Cols = useMemo(() => getTop15Cols(headers), [headers]);
+  const visHeaders = top15Cols.map(ci => headers[ci]).filter(Boolean);
 
   function handleSort(h) {
     if (sortField === h) {
@@ -379,15 +393,13 @@ function Top15SubTable({ rows, headers, scales, label, labelColor }) {
           <tbody>
             {sorted.map((row, ri) => (
               <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">
-                {TOP15_COLS.map((ci, i) => {
+                {top15Cols.map((ci, i) => {
                   const h = headers[ci];
                   if (!h) return null;
                   const val = row[`_c${ci}`];
                   let style = {};
-                  if (typeof val === 'number' && scales[ci]) {
-                    if (COLS_HIGH_GOOD.has(ci) || COLS_HIGH_BAD.has(ci)) {
-                      style = gradientStyle(val, scales[ci].min, scales[ci].max, COLS_HIGH_BAD.has(ci));
-                    }
+                  if (ci >= 3 && typeof val === 'number' && scales[ci]) {
+                    style = gradientStyle(val, scales[ci].min, scales[ci].max, false);
                   }
                   return (
                     <td key={i} className="px-2 py-1 text-center" style={{ ...style, fontSize: '11px' }}>
@@ -467,10 +479,11 @@ function exportToExcel(fileData, title, filteredStores) {
     if (!rows || rows.length === 0) return;
 
     const isRegionsView = label === 'Регионы';
+    const kariColCiExport = isRegionsView ? 2 : 0;
     const visHeaders = headers.filter((_, ci) => !skipCols.has(ci));
     const visIndices = headers.map((_, ci) => ci).filter(ci => !skipCols.has(ci));
 
-    const scales = computeScales(rows, headers, isRegionsView);
+    const scales = computeScales(rows, headers, isRegionsView, kariColCiExport);
 
     const wsData = [visHeaders];
     rows.forEach(row => {
@@ -494,12 +507,12 @@ function exportToExcel(fileData, title, filteredStores) {
 
         const row = rows[ri - 1];
         const val = row[`_c${ci}`];
-        const invert = COLS_HIGH_BAD.has(ci);
-        const rowName = String(row['_c0'] || '').toLowerCase();
+        const rowName = String(row[`_c${kariColCiExport}`] || '').toLowerCase();
         const isKariRow = rowName.includes('kari') || rowName.includes('кари');
         let bgHex = null;
-        if (!isKariRow && typeof val === 'number' && scales[ci] && (COLS_HIGH_GOOD.has(ci) || COLS_HIGH_BAD.has(ci))) {
-          bgHex = gradientHex(val, scales[ci].min, scales[ci].max, invert);
+        // Apply gradient to all numeric data columns (index 3+)
+        if (!isKariRow && ci >= 3 && typeof val === 'number' && scales[ci]) {
+          bgHex = gradientHex(val, scales[ci].min, scales[ci].max, false);
         }
 
         ws[cellAddr].s = {
@@ -534,17 +547,18 @@ export default function SalesHourPage({ fileData, title }) {
   const { headers, stores: rawStores, subdivs, regions, periods } = fileData;
   const periodInfo = periods && periods.length > 0 ? periods[0] : '';
 
-  // Filter out closed stores
-  const storeHeader = headers[3] || '';
+  // Filter out closed stores — store number is in column B (index 1)
+  const storeNumHeader = headers[1] || '';
   const stores = useMemo(() => {
     return (rawStores || []).filter(row => {
-      const storeNum = row[storeHeader];
+      const storeNum = row[storeNumHeader];
       const n = storeNum !== null && storeNum !== undefined ? Number(storeNum) : NaN;
       return !CLOSED_STORES.has(n);
     });
-  }, [rawStores, storeHeader]);
+  }, [rawStores, storeNumHeader]);
 
-  const subdivHeader = headers[1] || '';
+  // Subdivision name is in column A (index 0)
+  const subdivHeader = headers[0] || '';
   const subdivOptions = useMemo(() => {
     if (!stores || !subdivHeader) return [];
     const vals = stores
@@ -630,6 +644,7 @@ export default function SalesHourPage({ fileData, title }) {
             skipCols={SKIP_REGIONS}
             stickyColCi={STICKY_COL_CI.regions}
             excludeKariFromScales={true}
+            kariColCi={2}
           />
         )}
         {activeView === 'subdivs' && (
