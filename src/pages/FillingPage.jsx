@@ -209,11 +209,11 @@ export default function FillingPage({ region }) {
 
     // Sheet 1: Магазины (main metrics)
     {
-      const headers = ['Подразделение', 'Магазин', 'Наименование', 'Категория', '% напол. MAX', 'План MAX, пар', 'План, пар', 'Последних пар'];
+      const headers = ['Подразделение', 'Магазин', 'Наименование', 'Категория', '% напол. MAX', 'План MAX, пар', 'План, пар', 'Физ. запас магазина', 'Последних пар'];
       const rows = filteredSorted.map(s => [
         s.subdiv, s.store, s.name, s.cat,
         s.fillPctMax !== null ? s.fillPctMax.toFixed(1) + '%' : '',
-        s.planPairsMax, s.planPairsN, s.lastPairs,
+        s.planPairsMax, s.planPairsN, s.physStock, s.lastPairs,
       ]);
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
 
@@ -229,7 +229,7 @@ export default function FillingPage({ region }) {
         }
       });
 
-      ws['!cols'] = [{ wch: 16 }, { wch: 10 }, { wch: 28 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+      ws['!cols'] = [{ wch: 16 }, { wch: 10 }, { wch: 28 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 14 }];
       ws['!rows'] = [{ hpt: 36 }];
       XLSX.utils.book_append_sheet(wb, ws, 'Магазины');
     }
@@ -356,7 +356,7 @@ export default function FillingPage({ region }) {
     );
   }
 
-  const COL_SPAN = 9; // subdiv + store + name + cat + 4 metrics + chevron
+  const COL_SPAN = 10; // subdiv + store + name + cat + 5 metrics + chevron
 
   return (
     <div className="space-y-4">
@@ -425,6 +425,7 @@ export default function FillingPage({ region }) {
               <col style={{ width: 110 }} />
               <col style={{ width: 100 }} />
               <col style={{ width: 100 }} />
+              <col style={{ width: 110 }} />
               <col style={{ width: 100 }} />
             </colgroup>
             <thead>
@@ -472,6 +473,13 @@ export default function FillingPage({ region }) {
                 <th
                   className="text-center px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-800"
                   style={{ lineHeight: '1.3', whiteSpace: 'normal' }}
+                  onClick={() => toggleSort('physStock')}
+                >
+                  Физ. запас магазина <SortIcon field="physStock" />
+                </th>
+                <th
+                  className="text-center px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-800"
+                  style={{ lineHeight: '1.3', whiteSpace: 'normal' }}
                   onClick={() => toggleSort('lastPairs')}
                 >
                   Последних пар <SortIcon field="lastPairs" />
@@ -510,6 +518,9 @@ export default function FillingPage({ region }) {
                     </td>
                     <td className="px-2 py-2 text-center text-xs text-gray-700">
                       {fmtNum(store.planPairsN)}
+                    </td>
+                    <td className="px-2 py-2 text-center text-xs text-gray-700">
+                      {fmtNum(store.physStock)}
                     </td>
                     <td className="px-2 py-2 text-center text-xs text-gray-700">
                       {fmtNum(store.lastPairs)}
