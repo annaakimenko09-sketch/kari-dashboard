@@ -44,7 +44,7 @@ export function DataProvider({ children }) {
       const isIZ        = f => f.name.toLowerCase().includes('интернет заказ');
       const isSalesHour = f => {
         const n = f.name.toLowerCase();
-        return n.includes('по часу') || n.includes('по_часу');
+        return n.includes('по часу') || n.includes('по_часу') || n.includes('часу продаж') || n.includes('час продаж');
       };
       const isSales     = f => {
         if (isSalesHour(f)) return false; // не перехватывать файлы по часу
@@ -108,8 +108,11 @@ export function DataProvider({ children }) {
         const salesYuiResults = await parseSalesYuiFiles(salesYuiList);
         if (salesYuiResults.length > 0) setSalesYuiFiles(salesYuiResults);
       }
+      console.log('[DataContext] salesHourList:', salesHourList.map(f => f.name));
+      console.log('[DataContext] all files:', all.map(f => f.name));
       if (salesHourList.length > 0) {
         const salesHourResults = await parseSalesHourFiles(salesHourList);
+        console.log('[DataContext] salesHourResults:', salesHourResults.length);
         if (salesHourResults.length > 0) setSalesHourFiles(salesHourResults);
       }
     } catch (err) {

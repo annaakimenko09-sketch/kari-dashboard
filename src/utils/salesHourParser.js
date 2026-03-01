@@ -30,16 +30,24 @@ export async function parseSalesHourFiles(fileList) {
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer, { type: 'array' });
 
-    const sheetName = 'Рег';
-    if (!wb.SheetNames.includes(sheetName)) continue;
+    // Try 'Рег' first, then fall back to first available sheet
+    const sheetName = wb.SheetNames.includes('Рег')
+      ? 'Рег'
+      : wb.SheetNames[0];
+
+    if (!sheetName) continue;
+
+    console.log('[salesHourParser] file:', file.name, '| sheet:', sheetName, '| sheets:', wb.SheetNames);
 
     const ws = wb.Sheets[sheetName];
     const parsed = parseRegSheet(ws);
 
+    console.log('[salesHourParser] parsed stores:', parsed.stores?.length, '| subdivs:', parsed.subdivs?.length, '| regions:', parsed.regions?.length);
+
     results.push({
       fileName: file.name,
       fileRegion: detectRegion(file.name),
-      filePeriod: detectHour(file.name), // stores hour as period
+      filePeriod: detectHour(file.name),
       ...parsed,
     });
   }
