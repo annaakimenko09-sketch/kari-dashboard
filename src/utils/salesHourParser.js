@@ -34,16 +34,17 @@ function getCell(ws, r, c) {
 // Parse the «Регион» sheet from an hourly sales report.
 //
 // Sheet structure (0-indexed rows):
-//   row 0–2: period/title info in col A
-//   row 4:   column headers
+//   row 0: report title in col A
+//   row 1: date info in col A
+//   row 2: time info in col A  (e.g. "Время: 15:00")
+//   row 4: column headers
 //   rows 5+: data rows
-//     – store rows:  A = subdivision name (non-empty, NOT 'ИТОГО')
-//                    B = store number (numeric)
-//                    C = ТЦ / store name
-//     – blank rows:  separator between stores section and regions section
-//     – region rows: A = 'ИТОГО', B = 'ИТОГО', C = region label (Итого по...)
+//     – store rows:    A = subdivision name, B = store number (numeric), C = ТЦ name  (A != B)
+//     – subdiv rows:   A = B = C = subdivision name (e.g. "СПБ 1")
+//     – blank rows:    separator
+//     – region rows:   A = 'ИТОГО', B = 'ИТОГО', C = region label
 //
-// Returns { periods, headers, stores, subdivs: [], regions }
+// Returns { periods, fileTime, headers, stores, subdivs, regions }
 function parseHourSheet(ws) {
   const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
 
@@ -54,6 +55,14 @@ function parseHourSheet(ws) {
     if (v) periods.push(String(v));
   }
 
+  // Extract time from row 2 col A: "Время: 15:00" → "15:00"
+  let fileTime = '';
+  const timeRaw = getCell(ws, 2, 0);
+  if (timeRaw) {
+    const m = String(timeRaw).match(/(\d{1,2}:\d{2})/);
+    if (m) fileTime = m[1];
+  }
+
   // Row 4 = column headers
   const headers = [];
   for (let c = 0; c <= range.e.c; c++) {
@@ -62,16 +71,20 @@ function parseHourSheet(ws) {
   }
 
   const stores  = [];
+  const subdivs = [];
   const regions = [];
 
   for (let r = 5; r <= range.e.r; r++) {
     const aVal = getCell(ws, r, 0);
     const bVal = getCell(ws, r, 1);
+    const cVal = getCell(ws, r, 2);
 
     // Skip completely empty rows
     if (aVal === null && bVal === null) continue;
 
     const aStr = aVal !== null ? String(aVal).trim() : '';
+    const bStr = bVal !== null ? String(bVal).trim() : '';
+    const cStr = cVal !== null ? String(cVal).trim() : '';
 
     // Region/total row: A contains 'ИТОГО' (case-insensitive)
     if (aStr.toUpperCase() === 'ИТОГО') {
@@ -85,8 +98,7 @@ function parseHourSheet(ws) {
       continue;
     }
 
-    // Store row: A = subdivision name, B = store number, C = ТЦ
-    // Skip if A is empty (stray empty row)
+    // Skip if A is empty
     if (!aStr) continue;
 
     const row = { _colCount: headers.length };
@@ -95,10 +107,16 @@ function parseHourSheet(ws) {
       row[headers[c]] = v;
       row[`_c${c}`] = v;
     }
-    stores.push(row);
+
+    // Subdivision row: A = B = C (all same non-empty string)
+    if (aStr === bStr && aStr === cStr) {
+      subdivs.push(row);
+    } else {
+      stores.push(row);
+    }
   }
 
-  return { periods, headers, stores, subdivs: [], regions };
+  return { periods, fileTime, headers, stores, subdivs, regions };
 }
 
 export async function parseSalesHourFiles(fileList) {
@@ -123,6 +141,7 @@ export async function parseSalesHourFiles(fileList) {
       fileName:   file.name,
       fileRegion: detectRegion(file.name),
       filePeriod: detectHour(file.name),
+      fileTime:   parsed.fileTime,
       ...parsed,
     });
   }

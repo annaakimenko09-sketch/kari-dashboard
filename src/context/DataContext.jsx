@@ -218,12 +218,12 @@ export function DataProvider({ children }) {
   const belSalesMonth = salesFiles.find(f => f.fileRegion === 'БЕЛ' && f.filePeriod === 'МЕСЯЦ')  || null;
 
   // Sales По часу helpers (один файл на регион — последний загруженный)
+  // SPB: ищем по региону СПБ, если нет — берём ALL (файл без региона в имени)
+  // BEL: ищем только по региону БЕЛ (отдельный файл с БЕЛ/BEL в имени)
   const spbSalesHour = salesHourFiles.find(f => f.fileRegion === 'СПБ')
     || salesHourFiles.find(f => f.fileRegion === 'ALL')
     || null;
-  const belSalesHour = salesHourFiles.find(f => f.fileRegion === 'БЕЛ')
-    || salesHourFiles.find(f => f.fileRegion === 'ALL')
-    || null;
+  const belSalesHour = salesHourFiles.find(f => f.fileRegion === 'БЕЛ') || null;
 
   // Sales ЮИ helpers
   const spbSalesYuiDay   = salesYuiFiles.find(f => f.fileRegion === 'СПБ' && f.filePeriod === 'ДЕНЬ')   || null;

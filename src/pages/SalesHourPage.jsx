@@ -7,13 +7,13 @@ import * as XLSXStyle from 'xlsx-js-style';
 
 // Columns to hide per view (0-based indices)
 const SKIP_REGIONS = new Set([0, 1]);   // hide A(ИТОГО) and B(ИТОГО), show C(region) + data
-const SKIP_SUBDIVS = new Set([]);       // no subdivisions in this format
-const SKIP_STORES  = new Set([1]);      // hide B (store number), show A(subdivison) + C(ТЦ) + data
+const SKIP_SUBDIVS = new Set([1, 2]);   // hide B and C (same as A), show only A + data
+const SKIP_STORES  = new Set([]);       // show all: A(subdivision) + B(store num) + C(ТЦ) + data
 
 // Sticky column ci per view
 const STICKY_COL_CI = {
   regions: 2,  // C — region label
-  subdivs: 0,  // not used
+  subdivs: 0,  // A — subdivision name
   stores:  2,  // C — ТЦ name
 };
 
@@ -21,7 +21,16 @@ const STICKY_COL_CI = {
 const CLOSED_STORES = new Set([11596, 11787, 50015]);
 
 // Top-15: use ЮИ % column (search by header name)
-const YUI_PERCENT_HEADERS = ['ЮИ %', 'Доля ЮИ %', 'ТО ЮИ / ТО'];
+const YUI_PERCENT_HEADERS = ['ЮИ, %', 'ЮИ %', 'Доля ЮИ %', 'ТО ЮИ / ТО'];
+
+// Columns that should be formatted as integers (no decimals, no thousand separator with comma)
+const INTEGER_NO_DECIMALS = new Set(['Ср ТО с НДС', 'ТО без ШК', 'Ср. ТО с НДС', 'ТО руб.']);
+
+// Columns that should always be shown as %
+const FORCE_PERCENT_HEADERS = new Set([
+  'ТО к Вчера', 'КОП к Нед.', 'КОП к Вчера', 'ПвЧ к Нед', 'СЧ к Нед.',
+  'Трафик к Нед.', 'Трафик к Вчера',
+]);
 
 // ─── Percent column detection ──────────────────────────────────────────────────
 const PERCENT_EXACT = new Set([
@@ -126,8 +135,12 @@ function computeScales(rows, headers, excludeKari = false, kariColCi = 0) {
 function fmtVal(v, header) {
   if (v === null || v === undefined || v === '') return '';
   if (typeof v === 'number') {
-    if (header === 'ТО руб.') return Math.round(v).toLocaleString('ru-RU');
-    if (isPercentHeader(header)) {
+    // Integer columns — no decimals, space as thousand separator
+    if (INTEGER_NO_DECIMALS.has(header)) {
+      return Math.round(v).toLocaleString('ru-RU');
+    }
+    // Force percent columns
+    if (FORCE_PERCENT_HEADERS.has(header) || isPercentHeader(header)) {
       const pct = v * 100;
       return pct.toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%';
     }
@@ -544,8 +557,9 @@ export default function SalesHourPage({ fileData, title }) {
     );
   }
 
-  const { headers, stores: rawStores, subdivs, regions, periods } = fileData;
+  const { headers, stores: rawStores, subdivs, regions, periods, fileTime } = fileData;
   const periodInfo = periods && periods.length > 0 ? periods[0] : '';
+  const timeInfo = fileTime ? `Время: ${fileTime}` : '';
 
   // Filter out closed stores — store number is in column B (index 1)
   const storeNumHeader = headers[1] || '';
@@ -590,7 +604,7 @@ export default function SalesHourPage({ fileData, title }) {
   const tabCounts = {
     regions: regions?.length ?? 0,
     subdivs: subdivs?.length ?? 0,
-    stores:  stores?.length ?? 0,
+    stores:  filteredStores?.length ?? 0,
   };
 
   return (
@@ -599,7 +613,7 @@ export default function SalesHourPage({ fileData, title }) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-lg font-bold text-gray-800">{title}</h1>
-          {periodInfo && <p className="text-xs text-gray-500 mt-0.5">{periodInfo}</p>}
+          {periodInfo && <p className="text-xs text-gray-500 mt-0.5">{periodInfo}{timeInfo ? `, ${timeInfo}` : ''}</p>}
         </div>
         <button
           onClick={() => exportToExcel(fileData, title, filteredStores)}
@@ -649,10 +663,12 @@ export default function SalesHourPage({ fileData, title }) {
         )}
         {activeView === 'subdivs' && (
           <SortableTable
-            rows={filteredSubdivs}
+            rows={subdivs || []}
             headers={headers}
             skipCols={SKIP_SUBDIVS}
             stickyColCi={STICKY_COL_CI.subdivs}
+            excludeKariFromScales={false}
+            kariColCi={0}
           />
         )}
         {activeView === 'stores' && (
