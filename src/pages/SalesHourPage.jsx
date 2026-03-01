@@ -26,6 +26,12 @@ const YUI_PERCENT_HEADERS = ['ЮИ, %', 'ЮИ %', 'Доля ЮИ %', 'ТО ЮИ 
 // Columns that should be formatted as integers (no decimals, no thousand separator with comma)
 const INTEGER_NO_DECIMALS = new Set(['Ср ТО с НДС', 'ТО без ШК', 'Ср. ТО с НДС', 'ТО руб.']);
 
+// Columns that should be formatted with 2 decimal places (e.g. 1,23)
+const TWO_DECIMALS = new Set([
+  'Штук в чеке', 'Пар в чеке',
+  'Шт. в чеке', 'Пар. в чеке',
+]);
+
 // Columns that should always be shown as %
 const FORCE_PERCENT_HEADERS = new Set([
   'ТО к Вчера', 'КОП к Нед.', 'КОП к Вчера', 'ПвЧ к Нед', 'СЧ к Нед.',
@@ -545,6 +551,7 @@ function exportToExcel(fileData, title, filteredStores) {
           const pct = v * 100;
           return pct.toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%';
         }
+        if (TWO_DECIMALS.has(h)) return parseFloat(v.toFixed(2));
         return Number.isInteger(v) ? v : parseFloat(v.toFixed(0));
       }));
     });
@@ -570,11 +577,15 @@ function exportToExcel(fileData, title, filteredStores) {
         }
 
         const isNumericCell = typeof cellVal === 'number';
+        const h = headers[ci];
+        let numFmt = '# ##0';
+        if (!isNumericCell) numFmt = '@';
+        else if (TWO_DECIMALS.has(h)) numFmt = '# ##0.00';
         ws[cellAddr].s = {
           ...(bgHex ? { fill: { patternType: 'solid', fgColor: { rgb: bgHex } } } : {}),
           font: { color: { rgb: '1F2937' } },
           alignment: { horizontal: 'center' },
-          ...(isNumericCell ? { numFmt: '# ##0' } : { numFmt: '@' }),
+          numFmt,
         };
       });
     }
