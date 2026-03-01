@@ -32,6 +32,11 @@ const FORCE_PERCENT_HEADERS = new Set([
   'Трафик к Нед.', 'Трафик к Вчера',
 ]);
 
+// Columns where higher value = worse (inverted gradient: big = red)
+const INVERT_GRADIENT_HEADERS = new Set([
+  'ПП, пар (ост)', 'ПП, % (ост)', 'ИЗ, прос.зак.', 'ИЗ, % прос.зак.',
+]);
+
 // ─── Percent column detection ──────────────────────────────────────────────────
 const PERCENT_EXACT = new Set([
   'КОП',
@@ -299,7 +304,8 @@ function SortableTable({
                   let gradBg = null;
                   // Apply gradient to all numeric data columns (index 3+)
                   if (!isKariRow && ci >= 3 && typeof val === 'number' && scales[ci]) {
-                    const gs = gradientStyle(val, scales[ci].min, scales[ci].max, false);
+                    const invert = INVERT_GRADIENT_HEADERS.has(h);
+                    const gs = gradientStyle(val, scales[ci].min, scales[ci].max, invert);
                     gradBg = gs.backgroundColor;
                   }
                   return (
@@ -525,7 +531,9 @@ function exportToExcel(fileData, title, filteredStores) {
         let bgHex = null;
         // Apply gradient to all numeric data columns (index 3+)
         if (!isKariRow && ci >= 3 && typeof val === 'number' && scales[ci]) {
-          bgHex = gradientHex(val, scales[ci].min, scales[ci].max, false);
+          const h = headers[ci];
+          const invert = INVERT_GRADIENT_HEADERS.has(h);
+          bgHex = gradientHex(val, scales[ci].min, scales[ci].max, invert);
         }
 
         ws[cellAddr].s = {

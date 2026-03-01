@@ -15,6 +15,18 @@ function detectRegion(name) {
   return 'ALL';
 }
 
+// Determine region by scanning column A values in parsed stores/subdivs
+// Returns 'СПБ' | 'БЕЛ' | 'ALL'
+function detectRegionByContent(stores, subdivs) {
+  const rows = [...(stores || []), ...(subdivs || [])];
+  for (const row of rows) {
+    const a = String(row['_c0'] || '').toUpperCase().trim();
+    if (a.startsWith('СПБ')) return 'СПБ';
+    if (a.startsWith('БЕЛ')) return 'БЕЛ';
+  }
+  return 'ALL';
+}
+
 // Extract hour from filename: looks for _12, _15, _18, _22
 // Returns '12' | '15' | '18' | '22' | '00'
 function detectHour(name) {
@@ -86,6 +98,9 @@ function parseHourSheet(ws) {
     const bStr = bVal !== null ? String(bVal).trim() : '';
     const cStr = cVal !== null ? String(cVal).trim() : '';
 
+    // Skip header-repeat rows: A matches a known column header (e.g. 'Подр', 'ТЦ', 'Магаз')
+    if (headers.includes(aStr) || aStr === 'Подр' || aStr === 'Магаз' || aStr === 'ТЦ') continue;
+
     // Region/total row: A contains 'ИТОГО' (case-insensitive)
     if (aStr.toUpperCase() === 'ИТОГО') {
       const row = { _colCount: headers.length };
@@ -137,9 +152,14 @@ export async function parseSalesHourFiles(fileList) {
     const ws = wb.Sheets[sheetName];
     const parsed = parseHourSheet(ws);
 
+    // Determine region: prefer content-based detection, fall back to filename
+    const regionByName    = detectRegion(file.name);
+    const regionByContent = detectRegionByContent(parsed.stores, parsed.subdivs);
+    const fileRegion = (regionByName !== 'ALL') ? regionByName : regionByContent;
+
     results.push({
       fileName:   file.name,
-      fileRegion: detectRegion(file.name),
+      fileRegion,
       filePeriod: detectHour(file.name),
       fileTime:   parsed.fileTime,
       ...parsed,
