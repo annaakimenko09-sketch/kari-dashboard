@@ -218,8 +218,12 @@ export function DataProvider({ children }) {
   const belSalesMonth = salesFiles.find(f => f.fileRegion === 'БЕЛ' && f.filePeriod === 'МЕСЯЦ')  || null;
 
   // Sales По часу helpers (один файл на регион — последний загруженный)
-  const spbSalesHour = salesHourFiles.find(f => f.fileRegion === 'СПБ') || null;
-  const belSalesHour = salesHourFiles.find(f => f.fileRegion === 'БЕЛ') || null;
+  const spbSalesHour = salesHourFiles.find(f => f.fileRegion === 'СПБ')
+    || salesHourFiles.find(f => f.fileRegion === 'ALL')
+    || null;
+  const belSalesHour = salesHourFiles.find(f => f.fileRegion === 'БЕЛ')
+    || salesHourFiles.find(f => f.fileRegion === 'ALL')
+    || null;
 
   // Sales ЮИ helpers
   const spbSalesYuiDay   = salesYuiFiles.find(f => f.fileRegion === 'СПБ' && f.filePeriod === 'ДЕНЬ')   || null;
