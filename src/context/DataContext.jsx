@@ -71,6 +71,10 @@ export function DataProvider({ children }) {
       const salesHourList = all.filter(isSalesHour);
       const reportList    = all.filter(isReport);
 
+      console.log('[DC] all files:', all.map(f => f.name));
+      console.log('[DC] salesHourList:', salesHourList.map(f => f.name));
+      console.log('[DC] reportList:', reportList.map(f => f.name));
+
       if (reportList.length > 0) {
         const results = await parseExcelFiles(reportList);
         setParsedFiles(results);
