@@ -540,8 +540,11 @@ function exportToExcel(fileData, title, filteredStores) {
       wsData.push(visHeaders.map(h => {
         const v = row[h];
         if (typeof v !== 'number') return v !== null && v !== undefined ? v : '';
-        if (h === 'ТО руб.') return Math.round(v);
-        if (isPercentHeader(h)) return parseFloat((v * 100).toFixed(1));
+        if (INTEGER_NO_DECIMALS.has(h)) return Math.round(v);
+        if (FORCE_PERCENT_HEADERS.has(h) || isPercentHeader(h)) {
+          const pct = v * 100;
+          return pct.toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%';
+        }
         return Number.isInteger(v) ? v : parseFloat(v.toFixed(0));
       }));
     });
@@ -553,7 +556,6 @@ function exportToExcel(fileData, title, filteredStores) {
         const cellAddr = XLSXStyle.utils.encode_cell({ r: ri, c: vci });
         if (!ws[cellAddr]) return;
         const cellVal = ws[cellAddr].v;
-        if (typeof cellVal !== 'number') return;
 
         const row = rows[ri - 1];
         const val = row[`_c${ci}`];
@@ -567,11 +569,12 @@ function exportToExcel(fileData, title, filteredStores) {
           bgHex = gradientHex(val, scales[ci].min, scales[ci].max, invert);
         }
 
+        const isNumericCell = typeof cellVal === 'number';
         ws[cellAddr].s = {
           ...(bgHex ? { fill: { patternType: 'solid', fgColor: { rgb: bgHex } } } : {}),
           font: { color: { rgb: '1F2937' } },
           alignment: { horizontal: 'center' },
-          numFmt: '# ##0',
+          ...(isNumericCell ? { numFmt: '# ##0' } : { numFmt: '@' }),
         };
       });
     }
