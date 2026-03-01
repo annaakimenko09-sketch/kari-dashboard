@@ -30,6 +30,8 @@ const INTEGER_NO_DECIMALS = new Set(['Ср ТО с НДС', 'ТО без ШК', 
 const FORCE_PERCENT_HEADERS = new Set([
   'ТО к Вчера', 'КОП к Нед.', 'КОП к Вчера', 'ПвЧ к Нед', 'СЧ к Нед.',
   'Трафик к Нед.', 'Трафик к Вчера',
+  'Ср. ТО к Нед.', 'Ср ТО к Нед.', 'Ср ТО к Нед', 'ПвЧ к Нед.',
+  'СЧ Обувь к Нед', 'СЧ Обувь к Нед.', 'СЧ обувь к Нед', 'СЧ обувь к Нед.',
 ]);
 
 // Columns where higher value = worse (inverted gradient: big = red)
@@ -55,23 +57,38 @@ function isPercentHeader(h) {
 }
 
 // ─── Gradient helpers ──────────────────────────────────────────────────────────
-// 15-stop gradient: плавный переход от красного через жёлтый к зелёному
+// 30-stop gradient: мягкий плавный переход от красного через жёлтый к зелёному
 const COLOR_STOPS = [
-  [210,  50,  50],
-  [225,  70,  60],
-  [238,  92,  68],
-  [247, 115,  72],
-  [251, 140,  78],
-  [253, 165,  85],
-  [254, 188,  92],
-  [254, 210, 102],
-  [255, 230, 118],
-  [255, 245, 135],
-  [235, 242, 120],
-  [200, 232, 110],
-  [155, 212,  98],
-  [108, 190,  90],
-  [ 68, 165,  84],
+  [220,  80,  80],
+  [224,  90,  78],
+  [228, 100,  76],
+  [233, 112,  76],
+  [238, 124,  76],
+  [242, 136,  78],
+  [246, 148,  80],
+  [249, 160,  82],
+  [251, 172,  86],
+  [252, 183,  90],
+  [253, 194,  95],
+  [254, 204, 100],
+  [254, 213, 106],
+  [254, 221, 112],
+  [255, 229, 118],
+  [255, 235, 125],
+  [255, 240, 130],
+  [252, 243, 125],
+  [246, 244, 118],
+  [238, 243, 112],
+  [228, 240, 108],
+  [215, 236, 104],
+  [200, 231, 100],
+  [183, 225,  97],
+  [164, 218,  95],
+  [144, 209,  93],
+  [122, 199,  91],
+  [100, 188,  89],
+  [ 78, 177,  87],
+  [ 58, 164,  84],
 ];
 
 function computeRGB(ratio) {
@@ -203,7 +220,9 @@ function SortableTable({
     });
   }, [rows, sortField, sortDir]);
 
-  const subdivHeader = headers[1] || '';
+  // ci=0: Подр (dropdown), ci=1: Магаз (text input), ci=2: ТЦ (no filter), ci>=3: data (no filter)
+  const subdivColCi  = 0; // Подр — dropdown
+  const storeNumColCi = 1; // Магаз — text input
 
   return (
     <div className="overflow-x-auto">
@@ -246,8 +265,6 @@ function SortableTable({
               {visibleHeaders.map((h, i) => {
                 const ci = headers.indexOf(h);
                 const isSticky = ci === stickyColCi;
-                const isTextCol = ci <= 4;
-                const isSubdivCol = h === subdivHeader && subdivOptions.length > 0;
 
                 const stickyStyle = isSticky ? {
                   position: 'sticky',
@@ -257,9 +274,8 @@ function SortableTable({
                   boxShadow: '2px 0 4px rgba(0,0,0,0.08)',
                 } : {};
 
-                if (!isTextCol) return <th key={i} className="px-1 py-0.5" style={stickyStyle} />;
-
-                if (isSubdivCol) {
+                // Подр (ci=0) — dropdown
+                if (ci === subdivColCi && subdivOptions.length > 0) {
                   return (
                     <th key={i} className="px-1 py-0.5" style={stickyStyle}>
                       <select
@@ -276,17 +292,23 @@ function SortableTable({
                   );
                 }
 
-                return (
-                  <th key={i} className="px-1 py-0.5" style={stickyStyle}>
-                    <input
-                      type="text"
-                      value={filterState[h] || ''}
-                      onChange={e => onFilterChange(h, e.target.value)}
-                      placeholder="Фильтр"
-                      className="w-full text-xs px-1 py-0.5 border border-gray-300 rounded"
-                    />
-                  </th>
-                );
+                // Магаз (ci=1) — text input
+                if (ci === storeNumColCi) {
+                  return (
+                    <th key={i} className="px-1 py-0.5" style={stickyStyle}>
+                      <input
+                        type="text"
+                        value={filterState[h] || ''}
+                        onChange={e => onFilterChange(h, e.target.value)}
+                        placeholder="Фильтр"
+                        className="w-full text-xs px-1 py-0.5 border border-gray-300 rounded"
+                      />
+                    </th>
+                  );
+                }
+
+                // ТЦ (ci=2) и все остальные — пустая ячейка, без фильтра
+                return <th key={i} className="px-1 py-0.5" style={stickyStyle} />;
               })}
             </tr>
           )}
@@ -345,14 +367,23 @@ function SortableTable({
 }
 
 // ─── Top15 sub-table (sortable) ────────────────────────────────────────────────
-// Show: subdivision(0), ТЦ(2), and first 8 data cols (3–10)
+// Show: subdivision(0), ТЦ(2), Ср ТО с НДС, ЮИ %, Серебро %, Золото %
+const TOP15_DATA_HEADERS = ['Ср ТО с НДС', 'Ср. ТО с НДС', 'ЮИ, %', 'ЮИ %', 'Серебро, %', 'Золото, %'];
+
 function getTop15Cols(headers) {
   const fixed = [0, 2];
-  const data = headers
-    .map((_, ci) => ci)
-    .filter(ci => ci >= 3)
-    .slice(0, 8);
-  return [...fixed, ...data];
+  const data = TOP15_DATA_HEADERS
+    .map(h => headers.indexOf(h))
+    .filter(ci => ci >= 0);
+  // deduplicate (e.g. 'Ср ТО с НДС' and 'Ср. ТО с НДС' — take whichever found first)
+  const seen = new Set();
+  const deduped = [];
+  for (const ci of data) {
+    const h = headers[ci];
+    const key = h.replace(/[.,\s]/g, '').toLowerCase();
+    if (!seen.has(key)) { seen.add(key); deduped.push(ci); }
+  }
+  return [...fixed, ...deduped];
 }
 
 function Top15SubTable({ rows, headers, scales, label, labelColor }) {
