@@ -31,6 +31,8 @@ import SalesYuiDaySpbPage   from './pages/SalesYuiDaySpbPage';
 import SalesYuiDayBelPage   from './pages/SalesYuiDayBelPage';
 import SalesYuiMonthSpbPage from './pages/SalesYuiMonthSpbPage';
 import SalesYuiMonthBelPage from './pages/SalesYuiMonthBelPage';
+import SalesHourSpbPage     from './pages/SalesHourSpbPage';
+import SalesHourBelPage     from './pages/SalesHourBelPage';
 import UploadPage            from './pages/UploadPage';
 
 export default function App() {
@@ -91,6 +93,8 @@ export default function App() {
                 <Route path="sales/yui/day/bel"   element={<ErrorBoundary><SalesYuiDayBelPage /></ErrorBoundary>} />
                 <Route path="sales/yui/month/spb" element={<ErrorBoundary><SalesYuiMonthSpbPage /></ErrorBoundary>} />
                 <Route path="sales/yui/month/bel" element={<ErrorBoundary><SalesYuiMonthBelPage /></ErrorBoundary>} />
+                <Route path="sales/hour/spb"      element={<ErrorBoundary><SalesHourSpbPage /></ErrorBoundary>} />
+                <Route path="sales/hour/bel"      element={<ErrorBoundary><SalesHourBelPage /></ErrorBoundary>} />
 
                 {/* Загрузка */}
                 <Route path="upload"       element={<ErrorBoundary><UploadPage /></ErrorBoundary>} />

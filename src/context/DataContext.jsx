@@ -8,6 +8,7 @@ import { parseFillingFiles } from '../utils/fillingParser';
 import { parseIZFiles } from '../utils/izParser';
 import { parseSalesFiles } from '../utils/salesParser';
 import { parseSalesYuiFiles } from '../utils/salesYuiParser';
+import { parseSalesHourFiles } from '../utils/salesHourParser';
 
 const DataContext = createContext(null);
 
@@ -24,6 +25,7 @@ export function DataProvider({ children }) {
   const [izFiles, setIzFiles] = useState([]);              // Адресное ИЗ
   const [salesFiles, setSalesFiles] = useState([]);        // Продажи
   const [salesYuiFiles, setSalesYuiFiles] = useState([]);  // Продажи ЮИ
+  const [salesHourFiles, setSalesHourFiles] = useState([]); // Продажи по часу
 
   const loadFiles = useCallback(async (fileList) => {
     setLoading(true);
@@ -40,7 +42,12 @@ export function DataProvider({ children }) {
       const isPricing   = f => f.name.toLowerCase().includes('полупарк') || f.name.toLowerCase().includes('переоценк');
       const isFilling   = f => f.name.toLowerCase().includes('наполненност');
       const isIZ        = f => f.name.toLowerCase().includes('интернет заказ');
+      const isSalesHour = f => {
+        const n = f.name.toLowerCase();
+        return n.includes('по часу') || n.includes('по_часу');
+      };
       const isSales     = f => {
+        if (isSalesHour(f)) return false; // не перехватывать файлы по часу
         const n = f.name.toUpperCase();
         return (n.startsWith('ДЕНЬ_') || n.startsWith('МЕСЯЦ_')) &&
           (n.includes('СПБ') || n.includes('БЕЛ'));
@@ -51,7 +58,7 @@ export function DataProvider({ children }) {
         return (n.startsWith('ДЕНЬ') || n.startsWith('МЕСЯЦ')) &&
           !n.includes('СПБ') && !n.includes('БЕЛ') && !n.includes('SPB') && !n.includes('BEL');
       };
-      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f) && !isPricing(f) && !isFilling(f) && !isIZ(f) && !isSales(f) && !isSalesYui(f);
+      const isReport    = f => !isScanning(f) && !isJewelry(f) && !isCapsule(f) && !isPricing(f) && !isFilling(f) && !isIZ(f) && !isSalesHour(f) && !isSales(f) && !isSalesYui(f);
 
       const scanList    = all.filter(isScanning);
       const jewelryList = all.filter(isJewelry);
@@ -60,8 +67,9 @@ export function DataProvider({ children }) {
       const fillingList = all.filter(isFilling);
       const izList      = all.filter(isIZ);
       const salesList    = all.filter(isSales);
-      const salesYuiList = all.filter(isSalesYui);
-      const reportList   = all.filter(isReport);
+      const salesYuiList  = all.filter(isSalesYui);
+      const salesHourList = all.filter(isSalesHour);
+      const reportList    = all.filter(isReport);
 
       if (reportList.length > 0) {
         const results = await parseExcelFiles(reportList);
@@ -99,6 +107,10 @@ export function DataProvider({ children }) {
       if (salesYuiList.length > 0) {
         const salesYuiResults = await parseSalesYuiFiles(salesYuiList);
         if (salesYuiResults.length > 0) setSalesYuiFiles(salesYuiResults);
+      }
+      if (salesHourList.length > 0) {
+        const salesHourResults = await parseSalesHourFiles(salesHourList);
+        if (salesHourResults.length > 0) setSalesHourFiles(salesHourResults);
       }
     } catch (err) {
       setError(err.message || 'Ошибка при загрузке файлов');
@@ -208,6 +220,10 @@ export function DataProvider({ children }) {
   const spbSalesMonth = salesFiles.find(f => f.fileRegion === 'СПБ' && f.filePeriod === 'МЕСЯЦ')  || null;
   const belSalesMonth = salesFiles.find(f => f.fileRegion === 'БЕЛ' && f.filePeriod === 'МЕСЯЦ')  || null;
 
+  // Sales По часу helpers (один файл на регион — последний загруженный)
+  const spbSalesHour = salesHourFiles.find(f => f.fileRegion === 'СПБ') || null;
+  const belSalesHour = salesHourFiles.find(f => f.fileRegion === 'БЕЛ') || null;
+
   // Sales ЮИ helpers
   const spbSalesYuiDay   = salesYuiFiles.find(f => f.fileRegion === 'СПБ' && f.filePeriod === 'ДЕНЬ')   || null;
   const belSalesYuiDay   = salesYuiFiles.find(f => f.fileRegion === 'БЕЛ' && f.filePeriod === 'ДЕНЬ')   || null;
@@ -265,6 +281,9 @@ export function DataProvider({ children }) {
       belSalesYuiDay,
       spbSalesYuiMonth,
       belSalesYuiMonth,
+      salesHourFiles,
+      spbSalesHour,
+      belSalesHour,
     }}>
       {children}
     </DataContext.Provider>

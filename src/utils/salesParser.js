@@ -105,7 +105,7 @@ function getCell(ws, r, c) {
   return cell ? cell.v : null;
 }
 
-function parseRegSheet(ws) {
+export function parseRegSheet(ws) {
   const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
 
   // Collect period info from rows 0-2
