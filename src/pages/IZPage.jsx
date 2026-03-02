@@ -397,8 +397,8 @@ export default function IZPage({ region }) {
       {activeView === 'top15' && (() => {
         const allStores = activeSheetData.stores.filter(r => r.rating !== null && r.rating !== undefined);
         const sortedByRating = [...allStores].sort((a, b) => a.rating - b.rating);
-        const best15 = sortedByRating.slice(0, 15);
         const at100 = allStores.filter(r => r.scanShare !== null && r.scanShare <= 0);
+        const best15 = sortedByRating.filter(r => r.scanShare === null || r.scanShare > 0).slice(0, 15);
         const sortedWorst = [...allStores].sort((a, b) => b.rating - a.rating);
         const worst15 = at100.length >= 15
           ? sortedWorst.filter(r => r.scanShare !== null && r.scanShare <= 0)

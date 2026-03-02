@@ -371,7 +371,7 @@ export default function PricingPage({ region }) {
         const allValid = data.stores.filter(r => r[sortCol] !== null && r[sortCol] !== undefined);
         // лучшие: наименьшее значение (или наибольшее для инвертированных)
         const sorted = [...allValid].sort((a, b) => isInv ? b[sortCol] - a[sortCol] : a[sortCol] - b[sortCol]);
-        const best15 = sorted.slice(0, 15);
+        const best15 = sorted.filter(r => isInv ? r[sortCol] > 0 : r[sortCol] < 100).slice(0, 15);
         // худшие: все со 100% (или 0% для инвертированных), иначе 15 с конца
         const atWorst = isInv
           ? allValid.filter(r => r[sortCol] <= 0)

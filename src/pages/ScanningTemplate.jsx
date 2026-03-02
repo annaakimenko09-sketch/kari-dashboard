@@ -596,7 +596,7 @@ function Top15Section({ stores, tab, accentColor }) {
     const valid = stores.filter(r => r[pctField] !== null && r[pctField] !== undefined);
     const sorted = [...valid].sort((a, b) => a[pctField] - b[pctField]);
 
-    const best15 = sorted.slice(0, 15);
+    const best15 = sorted.filter(r => r[pctField] < 100).slice(0, 15);
 
     // Худшие: все со 100%, если их >= 15; иначе топ-15 с конца
     const at100 = valid.filter(r => r[pctField] >= 100);

@@ -383,7 +383,7 @@ export default function CapsulePage({ region }) {
       {activeTab === 'top15' && (() => {
         const allValid = storeRows.filter(r => r.pct !== null && r.pct !== undefined);
         const sorted = [...allValid].sort((a, b) => a.pct - b.pct);
-        const best15 = sorted.slice(0, 15);
+        const best15 = sorted.filter(r => r.pct < 100).slice(0, 15);
         const at100 = allValid.filter(r => r.pct >= 100);
         const worst15 = at100.length >= 15
           ? [...at100].sort((a, b) => b.pct - a.pct)

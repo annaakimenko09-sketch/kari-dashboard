@@ -306,6 +306,7 @@ export default function JewelryPage({ region }) {
   const [expandedStores, setExpandedStores] = useState({});
   const [viewMode, setViewMode] = useState('all'); // 'all' | 'worst'
   const [worstThreshold, setWorstThreshold] = useState(0);
+  const [activeView, setActiveView] = useState('stores'); // 'stores' | 'top15'
 
   if (!itogiData) {
     return (
@@ -422,7 +423,94 @@ export default function JewelryPage({ region }) {
         </div>
       </div>
 
-      {/* Магазины */}
+      {/* Вкладки Магазины / Топ-15 */}
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+        {[['stores', 'Магазины'], ['top15', 'Топ-15']].map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setActiveView(key)}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+              activeView === key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── ТОП-15 ────────────────────────────────────────────── */}
+      {activeView === 'top15' && (() => {
+        const allValid = stores.filter(r => r.pct !== null && r.pct !== undefined);
+        const sorted = [...allValid].sort((a, b) => a.pct - b.pct);
+        const best15 = sorted.filter(r => r.pct < 100).slice(0, 15);
+        const at100 = allValid.filter(r => r.pct >= 100);
+        const worst15 = at100.length >= 15
+          ? [...at100].sort((a, b) => b.pct - a.pct)
+          : [...sorted].reverse().slice(0, 15);
+        const allPcts = allValid.map(r => r.pct);
+        const pMin = allPcts.length ? Math.min(...allPcts) : 0;
+        const pMax = allPcts.length ? Math.max(...allPcts) : 100;
+        const top15ColorFn = makeColorFn(allPcts);
+
+        function JewelryMiniTable({ rows, title, titleColor }) {
+          return (
+            <div className="flex-1 min-w-0">
+              <h4 className="text-sm font-semibold mb-2" style={{ color: titleColor }}>{title}</h4>
+              <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">#</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-500">Магазин</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-500">Подразделение</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">% невыст.</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">Кол-во арт.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => {
+                      const c = top15ColorFn(r.pct);
+                      return (
+                        <tr key={i} className="border-b border-gray-50 hover:bg-amber-50">
+                          <td className="px-3 py-1.5 text-center text-gray-400 font-mono">{i + 1}</td>
+                          <td className="px-3 py-1.5 font-medium text-gray-700">{r.store || '—'}</td>
+                          <td className="px-3 py-1.5 text-gray-500">{r.subdiv || '—'}</td>
+                          <td className="px-3 py-1.5 text-center">
+                            <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold"
+                              style={{ color: c.text, backgroundColor: c.bg }}>
+                              {fmt(r.pct)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1.5 text-center text-gray-600">{fmtNum(r.artCount)}</td>
+                        </tr>
+                      );
+                    })}
+                    {rows.length === 0 && <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">Нет данных</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="flex flex-col gap-6 lg:flex-row">
+            <JewelryMiniTable
+              rows={best15}
+              title={`${best15.length} лучших магазинов (наименьший % невыст.)`}
+              titleColor="#16a34a"
+            />
+            <JewelryMiniTable
+              rows={worst15}
+              title={`${worst15.length} худших магазинов${at100.length >= 15 ? ' (100%)' : ''}`}
+              titleColor="#ef4444"
+            />
+          </div>
+        );
+      })()}
+
+      {/* ── Магазины ──────────────────────────────────────────── */}
+      {activeView === 'stores' && (
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
@@ -571,6 +659,7 @@ export default function JewelryPage({ region }) {
           Магазинов: {filteredStores.length}
         </div>
       </div>
+      )}
     </div>
   );
 }
