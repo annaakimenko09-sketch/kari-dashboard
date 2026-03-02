@@ -151,7 +151,7 @@ export default function IZPage({ region }) {
   const data = region === 'СПБ' ? spbIZ : belIZ;
 
   const [activeSheet, setActiveSheet] = useState('День');
-  const [activeView, setActiveView] = useState('regions'); // 'regions' | 'subdivs' | 'stores'
+  const [activeView, setActiveView] = useState('regions'); // 'regions' | 'subdivs' | 'stores' | 'top15'
   const [subdivFilter, setSubdivFilter] = useState('');
   const [storeFilter, setStoreFilter] = useState('');
   const [sortField, setSortField] = useState('rating');
@@ -353,12 +353,13 @@ export default function IZPage({ region }) {
         ))}
       </div>
 
-      {/* View tabs (Регионы / Подразделения / Магазины) */}
+      {/* View tabs (Регионы / Подразделения / Магазины / Топ-15) */}
       <div className="flex gap-1 border-b border-gray-200 pb-0">
         {[
           { key: 'regions',  label: 'Регионы' },
           { key: 'subdivs',  label: 'Подразделения' },
           { key: 'stores',   label: 'Магазины' },
+          { key: 'top15',    label: 'Топ-15' },
         ].map(tab => (
           <button
             key={tab.key}
@@ -391,6 +392,62 @@ export default function IZPage({ region }) {
           scales={subdivScales}
         />
       )}
+
+      {/* Top-15 */}
+      {activeView === 'top15' && (() => {
+        const allStores = activeSheetData.stores.filter(r => r.rating !== null && r.rating !== undefined);
+        const sortedByRating = [...allStores].sort((a, b) => a.rating - b.rating);
+        const best15 = sortedByRating.slice(0, 15);
+        const at100 = allStores.filter(r => r.scanShare !== null && r.scanShare <= 0);
+        const sortedWorst = [...allStores].sort((a, b) => b.rating - a.rating);
+        const worst15 = at100.length >= 15
+          ? sortedWorst.filter(r => r.scanShare !== null && r.scanShare <= 0)
+          : sortedWorst.slice(0, 15);
+        const allScales = getScales(allStores);
+
+        function MiniTableIZ({ rows, title, titleColor }) {
+          return (
+            <div className="flex-1 min-w-0">
+              <h4 className="text-sm font-semibold mb-2" style={{ color: titleColor }}>{title}</h4>
+              <div className="overflow-x-auto rounded-xl border border-gray-100 shadow-sm">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-200" style={{ backgroundColor: '#F9FAFB' }}>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">#</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">Магазин</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">Подразделение</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">Рейтинг</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">Доля скан.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, i) => (
+                      <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="px-3 py-1.5 text-center text-gray-400 font-mono">{i + 1}</td>
+                        <td className="px-3 py-1.5 text-center">
+                          <div className="font-medium text-gray-700">{row.store || '—'}</div>
+                          {row.tc && <div className="text-gray-400">{row.tc}</div>}
+                        </td>
+                        <td className="px-3 py-1.5 text-center text-gray-500">{row.subdiv || '—'}</td>
+                        <td className="px-3 py-1.5 text-center font-semibold" style={gradientStyleRating(row.rating, allScales.ratingMin, allScales.ratingMax)}>{fmtNum(row.rating)}</td>
+                        <td className="px-3 py-1.5 text-center font-semibold" style={gradientStyleScan(row.scanShare, allScales.scanMin, allScales.scanMax)}>{fmtPct(row.scanShare)}</td>
+                      </tr>
+                    ))}
+                    {rows.length === 0 && <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">Нет данных</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="flex flex-col gap-6 lg:flex-row">
+            <MiniTableIZ rows={best15} title="15 лучших магазинов (наименьший рейтинг)" titleColor="#16a34a" />
+            <MiniTableIZ rows={worst15} title={`${worst15.length} худших магазинов (наибольший рейтинг)`} titleColor="#ef4444" />
+          </div>
+        );
+      })()}
 
       {/* Stores */}
       {activeView === 'stores' && (

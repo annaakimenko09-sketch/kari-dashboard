@@ -318,11 +318,13 @@ export default function PricingPage({ region }) {
     { key: 'regions', label: `Регионы (${sortedRegions.length})` },
     { key: 'subdivs', label: `Подразделения (${sortedSubdivs.length})` },
     { key: 'stores',  label: `Магазины (${sortedStores.length})` },
+    { key: 'top15',   label: 'Топ-15' },
   ];
 
   const activeRows =
     activeTab === 'regions' ? sortedRegions :
     activeTab === 'subdivs' ? sortedSubdivs :
+    activeTab === 'top15'   ? filteredStores :
     filteredStores;
 
   const activeSheetName =
@@ -362,7 +364,77 @@ export default function PricingPage({ region }) {
         ))}
       </div>
 
+      {/* Top-15 */}
+      {activeTab === 'top15' && (() => {
+        const sortCol = columns[0]?.key || 'c0';
+        const isInv = INVERTED_COLS.has(sortCol);
+        const allValid = data.stores.filter(r => r[sortCol] !== null && r[sortCol] !== undefined);
+        // лучшие: наименьшее значение (или наибольшее для инвертированных)
+        const sorted = [...allValid].sort((a, b) => isInv ? b[sortCol] - a[sortCol] : a[sortCol] - b[sortCol]);
+        const best15 = sorted.slice(0, 15);
+        // худшие: все со 100% (или 0% для инвертированных), иначе 15 с конца
+        const atWorst = isInv
+          ? allValid.filter(r => r[sortCol] <= 0)
+          : allValid.filter(r => r[sortCol] >= 100);
+        const worst15 = atWorst.length >= 15
+          ? [...atWorst].sort((a, b) => isInv ? a[sortCol] - b[sortCol] : b[sortCol] - a[sortCol])
+          : [...sorted].reverse().slice(0, 15);
+        const allScales = {};
+        for (const col of columns) allScales[col.key] = buildColorScale(data.stores, col.key);
+
+        function PricingMiniTable({ rows, title, titleColor }) {
+          return (
+            <div className="flex-1 min-w-0">
+              <h4 className="text-sm font-semibold mb-2" style={{ color: titleColor }}>{title}</h4>
+              <div className="overflow-x-auto rounded-xl border border-gray-100 shadow-sm">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-200" style={{ backgroundColor: '#F9FAFB' }}>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">#</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">Магазин</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">Подразд.</th>
+                      {columns.map(col => (
+                        <th key={col.key} className="px-2 py-2 text-center font-semibold text-gray-500" style={{ whiteSpace: 'normal', lineHeight: '1.2', maxWidth: 90 }}>{col.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, i) => (
+                      <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="px-3 py-1.5 text-center text-gray-400 font-mono">{i + 1}</td>
+                        <td className="px-3 py-1.5 text-center font-medium text-gray-700">{row.store || '—'}</td>
+                        <td className="px-3 py-1.5 text-center text-gray-500">{row.subdiv || '—'}</td>
+                        {columns.map(col => {
+                          const sc = allScales[col.key] || { min: 0, max: 100 };
+                          return (
+                            <td key={col.key} className="px-2 py-1.5 text-center">
+                              <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium"
+                                style={pctColor(row[col.key], sc.min, sc.max, col.key)}>
+                                {fmtPct(row[col.key])}
+                              </span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                    {rows.length === 0 && <tr><td colSpan={3 + columns.length} className="px-3 py-4 text-center text-gray-400">Нет данных</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="flex flex-col gap-6 lg:flex-row">
+            <PricingMiniTable rows={best15} title="15 лучших магазинов" titleColor="#16a34a" />
+            <PricingMiniTable rows={worst15} title={`${worst15.length} худших магазинов`} titleColor="#ef4444" />
+          </div>
+        );
+      })()}
+
       {/* Table */}
+      {activeTab !== 'top15' && (
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 gap-3 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
@@ -411,9 +483,10 @@ export default function PricingPage({ region }) {
           sortDir={sortDir}
           onToggleSort={toggleSort}
           colorScales={colorScales}
-          labelCols={LABEL_COLS[activeTab]}
+          labelCols={LABEL_COLS[activeTab] || LABEL_COLS['stores']}
         />
       </div>
+      )}
     </div>
   );
 }

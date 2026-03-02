@@ -38,7 +38,7 @@ export default function CapsulePage({ region }) {
   // Магазины are region-specific — same file
   const storesData = regionFile;
 
-  const [activeTab, setActiveTab] = useState('itogi'); // 'itogi' | 'stores'
+  const [activeTab, setActiveTab] = useState('itogi'); // 'itogi' | 'stores' | 'top15'
   const [regionFilter, setRegionFilter] = useState('');
   const [subdivFilter, setSubdivFilter] = useState('');
   const [sortField, setSortField] = useState('pct');
@@ -262,7 +262,7 @@ export default function CapsulePage({ region }) {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-        {[['itogi', 'Итоги'], ['stores', 'Магазины']].map(([key, label]) => (
+        {[['itogi', 'Итоги'], ['stores', 'Магазины'], ['top15', 'Топ-15']].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
@@ -378,6 +378,64 @@ export default function CapsulePage({ region }) {
           )}
         </div>
       )}
+
+      {/* ── ТОП-15 tab ────────────────────────────────────────── */}
+      {activeTab === 'top15' && (() => {
+        const allValid = storeRows.filter(r => r.pct !== null && r.pct !== undefined);
+        const sorted = [...allValid].sort((a, b) => a.pct - b.pct);
+        const best15 = sorted.slice(0, 15);
+        const at100 = allValid.filter(r => r.pct >= 100);
+        const worst15 = at100.length >= 15
+          ? [...at100].sort((a, b) => b.pct - a.pct)
+          : [...sorted].reverse().slice(0, 15);
+        const allPcts = allValid.map(r => r.pct);
+        const pMin = Math.min(...allPcts);
+        const pMax = Math.max(...allPcts);
+
+        function CapsuleMiniTable({ rows, title, titleColor }) {
+          return (
+            <div className="flex-1 min-w-0">
+              <h4 className="text-sm font-semibold mb-2" style={{ color: titleColor }}>{title}</h4>
+              <div className="overflow-x-auto rounded-xl border border-gray-100 shadow-sm">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-100" style={{ backgroundColor: '#F9FAFB' }}>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-500">#</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-500">Магазин</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-500">Подразделение</th>
+                      <th className="px-3 py-2 text-right font-semibold text-gray-500">% Неотскан.</th>
+                      <th className="px-3 py-2 text-right font-semibold text-gray-500">Не отскан. арт.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="px-3 py-1.5 text-center text-gray-400 font-mono">{i + 1}</td>
+                        <td className="px-3 py-1.5 font-medium text-gray-700">{r.store || '—'}</td>
+                        <td className="px-3 py-1.5 text-gray-500">{r.subdiv || '—'}</td>
+                        <td className="px-3 py-1.5 text-right">
+                          <span className="px-2 py-0.5 rounded text-xs font-medium" style={pctColor(r.pct, pMin, pMax)}>
+                            {fmtPct(r.pct)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-gray-700">{fmtNum(r.notScanned)}</td>
+                      </tr>
+                    ))}
+                    {rows.length === 0 && <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">Нет данных</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="flex flex-col gap-6 lg:flex-row">
+            <CapsuleMiniTable rows={best15} title="15 лучших магазинов (наименьший % неотсканировано)" titleColor="#16a34a" />
+            <CapsuleMiniTable rows={worst15} title={`${worst15.length} худших магазинов${at100.length >= 15 ? ' (100%)' : ''}`} titleColor="#ef4444" />
+          </div>
+        );
+      })()}
 
       {/* ── МАГАЗИНЫ tab ──────────────────────────────────────── */}
       {activeTab === 'stores' && (
