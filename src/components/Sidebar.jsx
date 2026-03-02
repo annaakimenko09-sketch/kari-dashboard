@@ -152,8 +152,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
         >
           {!isCollapsed && (
             <div className="flex items-center gap-2.5 min-w-0">
-              {/* Accent dot */}
-              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: BRAND }} />
+              <img src="/kari-logo.svg" alt="kari" className="flex-shrink-0" style={{ width: 32, height: 38 }} />
               <div className="min-w-0">
                 <div className="font-black text-white text-sm tracking-wider leading-none">КАРИ</div>
                 <div className="text-xs mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.35)' }}>Аналитика</div>
@@ -163,7 +162,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
 
           {isCollapsed && (
             <div className="w-full flex justify-center">
-              <div className="w-6 h-6 rounded-full flex-shrink-0" style={{ backgroundColor: BRAND }} />
+              <img src="/kari-logo.svg" alt="kari" style={{ width: 28, height: 34 }} />
             </div>
           )}
 
