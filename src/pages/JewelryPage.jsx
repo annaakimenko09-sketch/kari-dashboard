@@ -304,6 +304,8 @@ export default function JewelryPage({ region }) {
   const [selectedSubdiv, setSelectedSubdiv] = useState('');
   const [sortDir, setSortDir] = useState('desc'); // desc = хуже сверху
   const [expandedStores, setExpandedStores] = useState({});
+  const [viewMode, setViewMode] = useState('all'); // 'all' | 'worst'
+  const [worstThreshold, setWorstThreshold] = useState(0);
 
   if (!itogiData) {
     return (
@@ -326,11 +328,14 @@ export default function JewelryPage({ region }) {
   // Магазины по выбранному подразделению
   const filteredStores = useMemo(() => {
     let rows = selectedSubdiv ? stores.filter(r => r.subdiv === selectedSubdiv) : stores;
+    if (viewMode === 'worst') {
+      rows = rows.filter(r => r.pct !== null && r.pct !== undefined && r.pct > worstThreshold);
+    }
     return [...rows].sort((a, b) => {
       const av = a.pct ?? -1, bv = b.pct ?? -1;
       return sortDir === 'desc' ? bv - av : av - bv;
     });
-  }, [stores, selectedSubdiv, sortDir]);
+  }, [stores, selectedSubdiv, sortDir, viewMode, worstThreshold]);
 
   // Цветовая функция для подразделений и магазинов
   const subdivColorFn = useMemo(() =>
@@ -420,7 +425,45 @@ export default function JewelryPage({ region }) {
       {/* Магазины */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
-          <h3 className="text-sm font-semibold text-gray-700">Магазины</h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-sm font-semibold text-gray-700">Магазины</h3>
+            {/* Переключатель Все / Худшие */}
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+              <button
+                onClick={() => setViewMode('all')}
+                className="px-3 py-1.5 transition-colors"
+                style={viewMode === 'all'
+                  ? { backgroundColor: ACCENT, color: 'white' }
+                  : { backgroundColor: 'white', color: '#6b7280' }}
+              >
+                Все
+              </button>
+              <button
+                onClick={() => setViewMode('worst')}
+                className="px-3 py-1.5 transition-colors border-l border-gray-200"
+                style={viewMode === 'worst'
+                  ? { backgroundColor: '#ef4444', color: 'white' }
+                  : { backgroundColor: 'white', color: '#6b7280' }}
+              >
+                Худшие
+              </button>
+            </div>
+            {/* Порог для режима "Худшие" */}
+            {viewMode === 'worst' && (
+              <div className="flex items-center gap-1 text-xs text-gray-500">
+                <span>% невыст. &gt;</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={worstThreshold}
+                  onChange={e => setWorstThreshold(Number(e.target.value))}
+                  className="w-14 px-2 py-1 border border-gray-200 rounded-lg text-center focus:outline-none focus:border-red-400"
+                />
+                <span>%</span>
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             {/* Фильтр по подразделению */}
             <select
@@ -439,7 +482,7 @@ export default function JewelryPage({ region }) {
             <button
               onClick={() => exportJewelryExcel(
                 filteredStores,
-                `ЮИ_${region}_магазины${selectedSubdiv ? '_' + selectedSubdiv : ''}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')}.xlsx`
+                `ЮИ_${region}_магазины${selectedSubdiv ? '_' + selectedSubdiv : ''}${viewMode === 'worst' ? '_худшие' : ''}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')}.xlsx`
               )}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white"
               style={{ backgroundColor: '#16a34a' }}
