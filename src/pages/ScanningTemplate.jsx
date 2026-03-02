@@ -586,6 +586,106 @@ function StoresSection({ stores, tab, accentColor }) {
   );
 }
 
+// ─── Top-15 best / worst stores ──────────────────────────────────────────
+
+function Top15Section({ stores, tab, accentColor }) {
+  const pctField = tab === 'bind' ? 'bindPct' : 'scanPct';
+  const artField = tab === 'bind' ? 'bindArt' : 'scanArt';
+
+  const { best15, worst15 } = useMemo(() => {
+    const valid = stores.filter(r => r[pctField] !== null && r[pctField] !== undefined);
+    const sorted = [...valid].sort((a, b) => a[pctField] - b[pctField]);
+
+    const best15 = sorted.slice(0, 15);
+
+    // Худшие: все со 100%, если их >= 15; иначе топ-15 с конца
+    const at100 = valid.filter(r => r[pctField] >= 100);
+    const worst15 = at100.length >= 15
+      ? [...at100].sort((a, b) => b[pctField] - a[pctField])
+      : [...sorted].reverse().slice(0, 15);
+
+    return { best15, worst15 };
+  }, [stores, pctField]);
+
+  const allColorFn = useMemo(() => makeColorFn(stores.map(r => r[pctField])), [stores, pctField]);
+
+  function MiniTable({ rows, title, titleColor }) {
+    const [modal, setModal] = useState(null);
+    return (
+      <div className="flex-1 min-w-0">
+        <h4 className="text-sm font-semibold mb-2 px-1" style={{ color: titleColor }}>{title}</h4>
+        <div className="border border-gray-200 rounded-xl overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                <th className="px-3 py-2 text-left font-semibold text-gray-500">#</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-500">Магазин</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-500">Подразделение</th>
+                <th className="px-3 py-2 text-center font-semibold text-gray-500">
+                  {tab === 'bind' ? 'Нет привязки, %' : 'Нет скан, %'}
+                </th>
+                <th className="px-3 py-2 text-center font-semibold text-gray-500">Артикулов</th>
+                {tab !== 'bind' && <th className="px-3 py-2 text-center font-semibold text-gray-500">Детали</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => {
+                const pct = row[pctField];
+                const c = allColorFn(pct);
+                const storeName = row.store || '—';
+                const tc = row.tc || '';
+                return (
+                  <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-3 py-1.5 text-gray-400 font-mono">{i + 1}</td>
+                    <td className="px-3 py-1.5">
+                      <div className="font-medium text-gray-700">{storeName}</div>
+                      {tc && <div className="text-gray-400 text-xs">{tc}</div>}
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-500">{row.subdiv || '—'}</td>
+                    <td className="px-3 py-1.5 text-center">
+                      <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold"
+                        style={{ color: c.text, backgroundColor: c.bg }}>
+                        {fmt(pct)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-center text-gray-600">{fmtNum(row[artField])}</td>
+                    {tab !== 'bind' && (
+                      <td className="px-3 py-1.5 text-center">
+                        {(row.seasons?.length > 0 || row.categories?.length > 0) ? (
+                          <button
+                            onClick={() => setModal({ title: `${storeName}${tc ? ' — ' + tc : ''}`, seasons: row.seasons || [], categories: row.categories || [] })}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-white"
+                            style={{ backgroundColor: accentColor }}
+                          >
+                            <ChevronDown size={10} /> Детали
+                          </button>
+                        ) : '—'}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+              {rows.length === 0 && (
+                <tr><td colSpan={tab === 'bind' ? 5 : 6} className="px-3 py-4 text-center text-gray-400">Нет данных</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {modal && (
+          <SeasonModal title={modal.title} seasons={modal.seasons} categories={modal.categories} onClose={() => setModal(null)} />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6 lg:flex-row">
+      <MiniTable rows={best15} title={`15 лучших магазинов (наименьший % невыст.)`} titleColor="#16a34a" />
+      <MiniTable rows={worst15} title={`${worst15.length} худших магазинов (${worst15.some(r => r[pctField] >= 100) && worst15.length >= 15 ? '100%' : 'наибольший % невыст.'})`} titleColor="#ef4444" />
+    </div>
+  );
+}
+
 // ─── Export helpers ───────────────────────────────────────────────────────
 
 // Convert hex color like "ef4444" to ARGB string "FFEF4444" for xlsx-js-style
@@ -771,6 +871,7 @@ export default function ScanningTemplate({ scanData, regionLabel, accentColor })
           { key: 'regions',       label: 'Регионы' },
           { key: 'subdivisions',  label: 'Подразделения' },
           { key: 'stores',        label: 'Магазины' },
+          { key: 'top15',         label: 'Топ-15' },
         ].map(s => (
           <button key={s.key} onClick={() => setSection(s.key)}
             className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
@@ -805,6 +906,10 @@ export default function ScanningTemplate({ scanData, regionLabel, accentColor })
         {section === 'stores' ? (
           <div className="p-4">
             <StoresSection stores={stores} tab={tab} accentColor={accentColor} />
+          </div>
+        ) : section === 'top15' ? (
+          <div className="p-4">
+            <Top15Section stores={stores} tab={tab} accentColor={accentColor} />
           </div>
         ) : (
           <ScanTable
