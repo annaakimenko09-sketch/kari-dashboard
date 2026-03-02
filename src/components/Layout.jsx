@@ -48,7 +48,7 @@ export default function Layout() {
 
           {/* Logo + title */}
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            <img src="/kari-logo.svg" alt="kari" className="flex-shrink-0 hidden lg:block" style={{ width: 28, height: 34 }} />
+            <img src="/kari-logo.jpg" alt="kari" className="flex-shrink-0 hidden lg:block rounded" style={{ height: 28, width: 'auto' }} />
             <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ backgroundColor: '#E91E8C' }} />
             <div className="min-w-0">
               <h1 className="text-base font-bold text-gray-900 leading-tight truncate">{title}</h1>
