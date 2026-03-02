@@ -96,8 +96,8 @@ function parseFilling(ws) {
 
     // Main metrics (cols L=11, M=12, N=13, T=19, AA=26)
     // fillPctMax stored as fraction in Excel (e.g. 1.27 = 127%) — multiply by 100
-    const fillPctMaxRaw = toNum(get(11));
-    const fillPctMax   = fillPctMaxRaw !== null ? fillPctMaxRaw * 100 : null; // L — % наполненности MAX
+    const fillPctMaxRaw = toNum(get(10));
+    const fillPctMax   = fillPctMaxRaw !== null ? fillPctMaxRaw * 100 : null; // K — % наполненности MAX
     const planPairsMax = toNum(get(12)); // M — Плановое количество MAX
     const planPairsN   = toNum(get(13)); // N — Плановое количество
     const physStock    = toNum(get(19)); // T — Физ. запас магазина
