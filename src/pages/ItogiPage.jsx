@@ -151,11 +151,11 @@ function exportSubdivs(items, filename) {
 
 // ─── Sales scoring ────────────────────────────────────────────────────────────
 const SALES_SCORE_COLS = [
-  { ci: 7,  label: 'План %',        dir: 1 },
-  { ci: 9,  label: 'ТО LFL',        dir: 1 },
-  { ci: 22, label: 'КОП',           dir: 1 },
-  { ci: 54, label: 'ЮИ %',          dir: 1 },
-  { ci: 33, label: 'Штук в чеке',   dir: 1 },
+  { ci: 7,  label: 'План %',        dir: 1, isPct: true  },
+  { ci: 9,  label: 'ТО LFL',        dir: 1, isPct: true  },
+  { ci: 22, label: 'КОП',           dir: 1, isPct: true  },
+  { ci: 54, label: 'ЮИ %',          dir: 1, isPct: true  },
+  { ci: 33, label: 'Штук в чеке',   dir: 1, isPct: false },
 ];
 
 const SALES_SCORE_LABELS = SALES_SCORE_COLS.map(c => c.label).join(' · ');
@@ -171,9 +171,9 @@ function salesScore(storeRow) {
 
 // Собираем сырые значения продаж для показа в попover
 function extractSalesRaw(storeRow) {
-  return SALES_SCORE_COLS.map(({ ci, label }) => {
+  return SALES_SCORE_COLS.map(({ ci, label, isPct }) => {
     const v = parseFloat(storeRow[`_c${ci}`]);
-    return { label, raw: isNaN(v) ? null : v };
+    return { label, raw: isNaN(v) ? null : v, isPct };
   });
 }
 
@@ -595,14 +595,19 @@ function StorePopover({ store, x, y }) {
         </div>
         {store.salesRaw ? (
           <div>
-            {store.salesRaw.map(({ label, raw }) => (
-              <div key={label} className="flex items-center gap-2 py-0.5">
-                <span className="text-xs w-24 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.45)' }}>{label}</span>
-                <span className="text-xs font-mono" style={{ color: raw !== null ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.2)' }}>
-                  {raw !== null ? raw.toFixed(1) : '—'}
-                </span>
-              </div>
-            ))}
+            {store.salesRaw.map(({ label, raw, isPct }) => {
+              const display = raw !== null
+                ? (isPct ? (raw * 100).toFixed(1) + '%' : raw.toFixed(2))
+                : null;
+              return (
+                <div key={label} className="flex items-center gap-2 py-0.5">
+                  <span className="text-xs w-24 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.45)' }}>{label}</span>
+                  <span className="text-xs font-mono" style={{ color: display !== null ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.2)' }}>
+                    {display !== null ? display : '—'}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>нет данных</span>
