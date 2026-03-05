@@ -207,6 +207,7 @@ const SALES_SCORE_COLS = [
   { ci: 9,  label: 'ТО LFL',        dir: 1, isPct: true  },
   { ci: 55, label: 'ЮИ %',          dir: 1, isPct: true  },
   { ci: 33, label: 'Штук в чеке',   dir: 1, isPct: false },
+  { ci: 41, label: 'Доля СБП %',    dir: 1, isPct: true  }, // SPB only; null in BEL → skipped in avg
 ];
 
 const SALES_SCORE_LABELS = SALES_SCORE_COLS.map(c => c.label).join(' · ');
