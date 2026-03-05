@@ -775,7 +775,7 @@ function MetricRow({ label, rawVal, rawLabel, score, color, inverted = false }) 
 }
 
 // ─── Store popover ─────────────────────────────────────────────────────────────
-function StorePopover({ store, x, y }) {
+function StorePopover({ store, x, y, mode = 'reglaments' }) {
   const ref = useRef(null);
   const [pos, setPos] = useState({ left: x, top: y });
 
@@ -833,6 +833,7 @@ function StorePopover({ store, x, y }) {
       </div>
 
       {/* Регламенты */}
+      {mode === 'reglaments' && (
       <div className="px-4 pt-3 pb-1">
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.3)' }}>Регламенты</p>
@@ -848,9 +849,11 @@ function StorePopover({ store, x, y }) {
         <MetricRow label="ИЗ"           rawVal={store.izRaw}      rawLabel="% скан."      score={store.izAvg}      color={scoreColor(store.izAvg)} />
         <MetricRow label="Цены"         rawVal={store.pricingRaw} rawLabel="% ПП без ценн."    score={store.pricingAvg} color={scoreColor(store.pricingAvg)} />
       </div>
+      )}
 
       {/* Продажи */}
-      <div className="px-4 pt-2 pb-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      {mode === 'sales' && (
+      <div className="px-4 pt-2 pb-3">
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.3)' }}>Продажи (месяц)</p>
           {store.salesScore !== null && (
@@ -879,6 +882,7 @@ function StorePopover({ store, x, y }) {
           <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>нет данных</span>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -1014,7 +1018,7 @@ function SubdivPopover({ subdiv, storeList, mode, x, y }) {
 }
 
 // ─── TopTable with export + popover ─────────────────────────────────────────────
-function TopTable({ title, items, scoreKey, scoreName, icon: Icon, accentColor, worst = false, onExport, onHover }) {
+function TopTable({ title, items, scoreKey, scoreName, icon: Icon, accentColor, worst = false, onExport, onHover, mode = 'reglaments' }) {
   if (!items.length) {
     return (
       <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
@@ -1056,12 +1060,12 @@ function TopTable({ title, items, scoreKey, scoreName, icon: Icon, accentColor, 
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
                 if (onHover) {
                   const rect = e.currentTarget.getBoundingClientRect();
-                  onHover(item, rect);
+                  onHover(item, rect, mode);
                 }
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = '';
-                if (onHover) onHover(null, null);
+                if (onHover) onHover(null, null, mode);
               }}
             >
               <span className="w-6 text-center text-sm flex-shrink-0" style={{ color: worst ? '#f87171' : '#facc15' }}>
@@ -1164,14 +1168,14 @@ export default function ItogiPage() {
   const [tooltip, setTooltip] = useState(null);
   const tooltipTimerRef = useRef(null);
 
-  function handleHover(store, rect) {
+  function handleHover(store, rect, mode) {
     clearTimeout(tooltipTimerRef.current);
     if (!store) {
       tooltipTimerRef.current = setTimeout(() => setTooltip(null), 80);
       return;
     }
     tooltipTimerRef.current = setTimeout(() => {
-      setTooltip({ store, x: rect.right + 8, y: rect.top });
+      setTooltip({ store, x: rect.right + 8, y: rect.top, mode: mode || 'reglaments' });
     }, 120);
   }
 
@@ -1417,13 +1421,13 @@ export default function ItogiPage() {
                 <TopTable title="ТОП-15 лучших (продажи, месяц)" items={salTop} scoreKey="salesScore" scoreName="балл"
                   icon={TrendingUp} accentColor="#10b981"
                   onExport={() => exportStores(salTop, 'Итоги_ТОП15_продажи_лучшие', 'sales')}
-                  onHover={handleHover} />
+                  onHover={handleHover} mode="sales" />
               )}
               {activeTab === 'sales' && topSubTab === 'worst' && (
                 <TopTable title="ТОП-15 отстающих (продажи, месяц)" items={salBottom} scoreKey="salesScore" scoreName="балл"
                   icon={TrendingDown} accentColor="#ef4444" worst
                   onExport={() => exportStores(salBottom, 'Итоги_ТОП15_продажи_худшие', 'sales')}
-                  onHover={handleHover} />
+                  onHover={handleHover} mode="sales" />
               )}
             </div>
 
@@ -1461,13 +1465,13 @@ export default function ItogiPage() {
                     <TopTable title={`ТОП-15 по продажам (${region})`} items={makeSalTop(stores)}
                       scoreKey="salesScore" scoreName="балл" icon={TrendingUp} accentColor="#10b981"
                       onExport={() => exportStores(makeSalTop(stores), `Итоги_${region}_продажи_лучшие`, 'sales')}
-                      onHover={handleHover} />
+                      onHover={handleHover} mode="sales" />
                   )}
                   {detailTab === 'sales' && subTab === 'worst' && (
                     <TopTable title={`Отстающие по продажам (${region})`} items={makeSalBottom(stores)}
                       scoreKey="salesScore" scoreName="балл" icon={TrendingDown} accentColor="#ef4444" worst
                       onExport={() => exportStores(makeSalBottom(stores), `Итоги_${region}_продажи_худшие`, 'sales')}
-                      onHover={handleHover} />
+                      onHover={handleHover} mode="sales" />
                   )}
                 </div>
               ))}
@@ -1478,7 +1482,7 @@ export default function ItogiPage() {
 
       {/* Store popover */}
       {tooltip && (
-        <StorePopover store={tooltip.store} x={tooltip.x} y={tooltip.y} />
+        <StorePopover store={tooltip.store} x={tooltip.x} y={tooltip.y} mode={tooltip.mode || 'reglaments'} />
       )}
 
       {/* Subdiv popover */}
