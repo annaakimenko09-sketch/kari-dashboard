@@ -351,11 +351,12 @@ function TopTable({ title, items, scoreKey, scoreName, icon: Icon, accentColor, 
   );
 }
 
-// Подразделения — СПБ+БЕЛ вместе, sorted worst→best
-function SubdivTable({ subdivs, worst = false }) {
+// Подразделения — СПБ+БЕЛ вместе
+// scoreKey: 'avgRegScore' | 'avgSalesScore'
+function SubdivTable({ subdivs, worst = false, scoreKey = 'avgRegScore' }) {
   const sorted = subdivs
-    .filter(d => d.avgRegScore !== null)
-    .sort((a, b) => worst ? a.avgRegScore - b.avgRegScore : b.avgRegScore - a.avgRegScore)
+    .filter(d => d[scoreKey] !== null && d[scoreKey] !== undefined)
+    .sort((a, b) => worst ? a[scoreKey] - b[scoreKey] : b[scoreKey] - a[scoreKey])
     .slice(0, 9);
 
   if (!sorted.length) return <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Нет данных</p>;
@@ -370,7 +371,7 @@ function SubdivTable({ subdivs, worst = false }) {
             <span className="text-xs flex-shrink-0" style={{ color: 'rgba(255,255,255,0.35)' }}>{d.regionsLabel}</span>
           </div>
           <div className="w-32 flex-shrink-0">
-            <ScoreBar value={d.avgRegScore} color={worst ? '#f87171' : '#10b981'} />
+            <ScoreBar value={d[scoreKey]} color={worst ? '#f87171' : '#10b981'} />
           </div>
         </div>
       ))}
@@ -465,26 +466,42 @@ export default function ItogiPage() {
               </div>
             )}
 
-            {/* Проблемные подразделения — СПБ и БЕЛ вместе */}
+            {/* Подразделения — СПБ и БЕЛ вместе, 2 блока: регламенты и продажи */}
             <div>
               <h2 className="text-base font-semibold text-white mb-1 flex items-center gap-2">
                 <AlertTriangle size={15} style={{ color: '#f59e0b' }} />
-                Проблемные подразделения
+                Подразделения
                 <span className="text-xs font-normal ml-1" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                  СПБ + БЕЛ, по ср. баллу регламентов (вывозы + сканирование обуви + капсулы + ЮИ)
+                  СПБ + БЕЛ вместе
                 </span>
               </h2>
               <p className="text-xs mb-4" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                Баллы: 0 = хуже, 100 = лучше. Сканирование: 100% неотсканированных → 0 баллов. ЮИ: 100% невыставленных → 0 баллов.
+                Баллы 0–100: выше = лучше. Регламенты = вывозы + сканирование обуви + капсулы + ЮИ. Продажи = план%, ТО LFL, КОП, ЮИ%, штук в чеке.
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+              {/* Регламенты */}
+              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Регламенты</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'rgba(255,255,255,0.35)' }}>Слабые подразделения</p>
-                  <SubdivTable subdivs={subdivScores} worst />
+                  <p className="text-xs font-semibold mb-4" style={{ color: '#f87171' }}>Слабые подразделения</p>
+                  <SubdivTable subdivs={subdivScores} worst scoreKey="avgRegScore" />
                 </div>
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'rgba(255,255,255,0.35)' }}>Сильные подразделения</p>
-                  <SubdivTable subdivs={subdivScores} worst={false} />
+                  <p className="text-xs font-semibold mb-4" style={{ color: '#10b981' }}>Сильные подразделения</p>
+                  <SubdivTable subdivs={subdivScores} worst={false} scoreKey="avgRegScore" />
+                </div>
+              </div>
+
+              {/* Продажи */}
+              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Продажи</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
+                  <p className="text-xs font-semibold mb-4" style={{ color: '#f87171' }}>Слабые подразделения</p>
+                  <SubdivTable subdivs={subdivScores} worst scoreKey="avgSalesScore" />
+                </div>
+                <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
+                  <p className="text-xs font-semibold mb-4" style={{ color: '#10b981' }}>Сильные подразделения</p>
+                  <SubdivTable subdivs={subdivScores} worst={false} scoreKey="avgSalesScore" />
                 </div>
               </div>
             </div>
