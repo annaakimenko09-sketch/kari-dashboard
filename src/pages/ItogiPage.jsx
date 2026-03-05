@@ -53,14 +53,12 @@ function isClosed(row) {
 }
 
 // ─── Excel export ──────────────────────────────────────────────────────────────
-const SCORE_COLS = ['Скан. обувь', 'ЮИ', 'Капсулы', 'ИЗ', 'Цены', 'Балл регламент', 'Продажи (мес.)', 'Продажи (день)', 'Балл продажи'];
-const SCORE_COL_INDICES = new Set([4, 5, 6, 7, 8, 9, 10, 11, 12]); // 0-indexed in store row
+const SCORE_COL_INDICES = new Set([4, 5, 6, 7, 8, 9, 10]);
 
 function scoreColor(val) {
   if (val === '' || val === null || val === undefined) return null;
   const v = parseFloat(val);
   if (isNaN(v)) return null;
-  // 0 = red, 100 = green
   const r = Math.round(255 - v * 1.5);
   const g = Math.round(v * 2);
   const b = 60;
@@ -77,12 +75,10 @@ const HEADER_STYLE = {
 };
 
 function applyStoreSheet(ws, wsData) {
-  // Header row styling
   wsData[0].forEach((_, ci) => {
     const addr = XLSXStyle.utils.encode_cell({ r: 0, c: ci });
     if (ws[addr]) ws[addr].s = HEADER_STYLE;
   });
-  // Data rows
   for (let ri = 1; ri < wsData.length; ri++) {
     wsData[ri].forEach((val, ci) => {
       const addr = XLSXStyle.utils.encode_cell({ r: ri, c: ci });
@@ -97,11 +93,10 @@ function applyStoreSheet(ws, wsData) {
       };
     });
   }
-  // Column widths
   ws['!cols'] = [
     { wch: 4 }, { wch: 6 }, { wch: 14 }, { wch: 28 },
     { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 8 }, { wch: 10 },
-    { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 13 },
+    { wch: 14 }, { wch: 13 },
   ];
 }
 
@@ -109,11 +104,11 @@ function exportStores(items, filename) {
   const wb = XLSXStyle.utils.book_new();
   const headers = ['#', 'Регион', 'Подразделение', 'Магазин',
     'Скан. обувь', 'ЮИ', 'Капсулы', 'ИЗ', 'Цены',
-    'Балл регламент', 'Продажи (мес.)', 'Продажи (день)', 'Балл продажи'];
+    'Балл регламент', 'Балл продажи'];
   const rows = items.map((s, i) => [
     i + 1, s.region, s.subdiv || '—', s.store,
     fmt(s.scanAvg), fmt(s.yuiAvg), fmt(s.capsAvg), fmt(s.izAvg), fmt(s.pricingAvg),
-    fmt(s.regScore), fmt(s.salesMonthScore), fmt(s.salesDayScore), fmt(s.salesScore),
+    fmt(s.regScore), fmt(s.salesScore),
   ]);
   const wsData = [headers, ...rows];
   const ws = XLSXStyle.utils.aoa_to_sheet(wsData);
@@ -131,12 +126,10 @@ function exportSubdivs(items, filename) {
   ]);
   const wsData = [headers, ...rows];
   const ws = XLSXStyle.utils.aoa_to_sheet(wsData);
-  // Header
   wsData[0].forEach((_, ci) => {
     const addr = XLSXStyle.utils.encode_cell({ r: 0, c: ci });
     if (ws[addr]) ws[addr].s = HEADER_STYLE;
   });
-  // Data
   for (let ri = 1; ri < wsData.length; ri++) {
     wsData[ri].forEach((val, ci) => {
       const addr = XLSXStyle.utils.encode_cell({ r: ri, c: ci });
@@ -176,6 +169,14 @@ function salesScore(storeRow) {
   return cnt ? sum / cnt : null;
 }
 
+// Собираем сырые значения продаж для показа в попover
+function extractSalesRaw(storeRow) {
+  return SALES_SCORE_COLS.map(({ ci, label }) => {
+    const v = parseFloat(storeRow[`_c${ci}`]);
+    return { label, raw: isNaN(v) ? null : v };
+  });
+}
+
 function normalizeScores(items) {
   const valid = items.filter(x => x.score !== null).sort((a, b) => a.score - b.score);
   if (!valid.length) return items;
@@ -196,41 +197,46 @@ function extractSalesStores(salesFile) {
 }
 
 // ─── Regulation scores ────────────────────────────────────────────────────────
+// Возвращает { score, rawPct } чтобы показывать исходный % в попover
+
 function scanScore(row) {
   const v = pct(row.scanPct);
-  return v !== null ? Math.max(0, 100 - v) : null;
+  if (v === null) return { score: null, raw: null };
+  return { score: Math.max(0, 100 - v), raw: v }; // raw = % неотсканированных
 }
 
 function yuiScore(row) {
   const v = pct(row.pct);
-  return v !== null ? Math.max(0, 100 - v) : null;
+  if (v === null) return { score: null, raw: null };
+  return { score: Math.max(0, 100 - v), raw: v }; // raw = % невыставленных
 }
 
 function capsuleScore(row) {
   const v = pct(row.notScannedPct ?? row['% Неотскан'] ?? row.pct);
-  return v !== null ? Math.max(0, 100 - v) : null;
+  if (v === null) return { score: null, raw: null };
+  return { score: Math.max(0, 100 - v), raw: v }; // raw = % неотсканировано
 }
 
 function izScore(row) {
-  return pct(row.scanShare);
+  const v = pct(row.scanShare);
+  if (v === null) return { score: null, raw: null };
+  return { score: v, raw: v }; // raw = % сканирования (уже хорошее направление)
 }
 
 function pricingScore(row) {
-  const bad = [row.c0, row.c1, row.c2, row.c3, row.c4]
-    .map(v => pct(v))
-    .filter(v => v !== null);
+  const badVals = [row.c0, row.c1, row.c2, row.c3, row.c4].map(v => pct(v)).filter(v => v !== null);
   const good = pct(row.c5);
-  if (!bad.length && good === null) return null;
+  if (!badVals.length && good === null) return { score: null, raw: null };
   const scores = [];
-  if (bad.length) scores.push(100 - avg(...bad));
+  if (badVals.length) scores.push(100 - avg(...badVals));
   if (good !== null) scores.push(good);
-  return avg(...scores);
+  const badAvg = badVals.length ? avg(...badVals) : null;
+  return { score: avg(...scores), raw: badAvg }; // raw = средний % проблем с ценами
 }
 
 // ─── Build unified store list ──────────────────────────────────────────────────
 function buildStoreScores({
   spbSalesMonth, belSalesMonth,
-  spbSalesDay, belSalesDay,
   spbScanning, belScanning,
   spbCapsule, belCapsule,
   spbJewelryItogi, belJewelryItogi,
@@ -245,8 +251,13 @@ function buildStoreScores({
     const k = key(region, store);
     if (!map[k]) map[k] = {
       region, store, subdiv,
-      scanScores: [], capsuleScores: [], yuiScores: [], izScores: [], pricingScores: [],
-      salesMonthScore: null, salesDayScore: null,
+      scanScores: [], scanRaws: [],
+      capsuleScores: [], capsuleRaws: [],
+      yuiScores: [], yuiRaws: [],
+      izScores: [], izRaws: [],
+      pricingScores: [], pricingRaws: [],
+      salesMonthScore: null,
+      salesRaw: null, // массив { label, raw } из файла продаж
     };
     return map[k];
   }
@@ -258,8 +269,12 @@ function buildStoreScores({
       if (isClosed(row)) continue;
       const store = storeLabel(row);
       if (!store) continue;
-      const s = scanScore(row);
-      if (s !== null) ensure(region, store, subdivOf(row)).scanScores.push(s);
+      const { score, raw } = scanScore(row);
+      if (score !== null) {
+        const obj = ensure(region, store, subdivOf(row));
+        obj.scanScores.push(score);
+        obj.scanRaws.push(raw);
+      }
     }
   }
 
@@ -272,8 +287,12 @@ function buildStoreScores({
       if (!r) continue;
       const store = storeLabel(row);
       if (!store) continue;
-      const s = yuiScore(row);
-      if (s !== null) ensure(r, store, subdivOf(row)).yuiScores.push(s);
+      const { score, raw } = yuiScore(row);
+      if (score !== null) {
+        const obj = ensure(r, store, subdivOf(row));
+        obj.yuiScores.push(score);
+        obj.yuiRaws.push(raw);
+      }
     }
   }
 
@@ -285,8 +304,12 @@ function buildStoreScores({
       const r = region || regionOf(row) || 'СПБ';
       const store = storeLabel(row);
       if (!store) continue;
-      const s = capsuleScore(row);
-      if (s !== null) ensure(r, store, subdivOf(row)).capsuleScores.push(s);
+      const { score, raw } = capsuleScore(row);
+      if (score !== null) {
+        const obj = ensure(r, store, subdivOf(row));
+        obj.capsuleScores.push(score);
+        obj.capsuleRaws.push(raw);
+      }
     }
   }
 
@@ -301,8 +324,12 @@ function buildStoreScores({
       if (!r) continue;
       const store = storeLabel(row);
       if (!store) continue;
-      const s = izScore(row);
-      if (s !== null) ensure(r, store, subdivOf(row)).izScores.push(s);
+      const { score, raw } = izScore(row);
+      if (score !== null) {
+        const obj = ensure(r, store, subdivOf(row));
+        obj.izScores.push(score);
+        obj.izRaws.push(raw);
+      }
     }
   }
 
@@ -315,11 +342,16 @@ function buildStoreScores({
       if (!r) continue;
       const store = storeLabel(row);
       if (!store) continue;
-      const s = pricingScore(row);
-      if (s !== null) ensure(r, store, subdivOf(row)).pricingScores.push(s);
+      const { score, raw } = pricingScore(row);
+      if (score !== null) {
+        const obj = ensure(r, store, subdivOf(row));
+        obj.pricingScores.push(score);
+        obj.pricingRaws.push(raw);
+      }
     }
   }
 
+  // Продажи — только месяц
   for (const sf of [spbSalesMonth, belSalesMonth]) {
     if (!sf) continue;
     const region = sf.fileRegion;
@@ -328,28 +360,13 @@ function buildStoreScores({
       score: salesScore(r),
       store: String(r['_c3'] || r['Магазин'] || '').trim(),
       subdiv: String(r['_c1'] || r['Подразделение'] || '').trim(),
+      rawRow: r,
     })));
-    for (const { normScore, store, subdiv } of withScores) {
+    for (const { normScore, store, subdiv, rawRow } of withScores) {
       if (!store || normScore === null) continue;
       const obj = ensure(region, store, subdiv);
       obj.salesMonthScore = normScore;
-      if (!obj.subdiv && subdiv) obj.subdiv = subdiv;
-    }
-  }
-
-  for (const sf of [spbSalesDay, belSalesDay]) {
-    if (!sf) continue;
-    const region = sf.fileRegion;
-    const stores = extractSalesStores(sf).filter(r => !isClosed(r));
-    const withScores = normalizeScores(stores.map(r => ({
-      score: salesScore(r),
-      store: String(r['_c3'] || r['Магазин'] || '').trim(),
-      subdiv: String(r['_c1'] || r['Подразделение'] || '').trim(),
-    })));
-    for (const { normScore, store, subdiv } of withScores) {
-      if (!store || normScore === null) continue;
-      const obj = ensure(region, store, subdiv);
-      obj.salesDayScore = normScore;
+      obj.salesRaw = extractSalesRaw(rawRow);
       if (!obj.subdiv && subdiv) obj.subdiv = subdiv;
     }
   }
@@ -361,8 +378,19 @@ function buildStoreScores({
     const izAvg      = obj.izScores.length      ? avg(...obj.izScores)      : null;
     const pricingAvg = obj.pricingScores.length ? avg(...obj.pricingScores) : null;
     const regScore   = avg(...[scanAvg, yuiAvg, capsAvg, izAvg, pricingAvg].filter(v => v !== null));
-    const salesScore = avg(...[obj.salesMonthScore, obj.salesDayScore].filter(v => v !== null));
-    return { ...obj, scanAvg, yuiAvg, capsAvg, izAvg, pricingAvg, regScore, salesScore };
+    // Сырые значения для попover (берём первый элемент — обычно один файл на магазин)
+    const scanRaw    = obj.scanRaws[0]    ?? null;
+    const yuiRaw     = obj.yuiRaws[0]     ?? null;
+    const capsRaw    = obj.capsuleRaws[0] ?? null;
+    const izRaw      = obj.izRaws[0]      ?? null;
+    const pricingRaw = obj.pricingRaws[0] ?? null;
+    return {
+      ...obj,
+      scanAvg, yuiAvg, capsAvg, izAvg, pricingAvg,
+      scanRaw, yuiRaw, capsRaw, izRaw, pricingRaw,
+      regScore,
+      salesScore: obj.salesMonthScore, // только месяц
+    };
   });
 }
 
@@ -406,14 +434,17 @@ function buildInsights(storeList, subdivScores) {
   return insights;
 }
 
+// Разбиваем на худших (больше) и лучших (меньше), нет пересечений
+// При 9 подразделениях: worst=5, best=4
 function getSubdivSplit(subdivs, scoreKey) {
   const all = subdivs
     .filter(d => d[scoreKey] !== null && d[scoreKey] !== undefined)
-    .sort((a, b) => b[scoreKey] - a[scoreKey]);
-  const half = Math.ceil(all.length / 2);
-  const best  = all.slice(0, half);
-  const worst = all.slice(half).reverse();
-  return { best, worst };
+    .sort((a, b) => b[scoreKey] - a[scoreKey]); // убывание: [лучший...худший]
+  const bestCount = Math.floor(all.length / 2);  // 4 при 9
+  const worstCount = all.length - bestCount;      // 5 при 9
+  const best  = all.slice(0, bestCount);
+  const worst = all.slice(bestCount).reverse();   // разворачиваем: самый худший первым
+  return { best, worst, bestCount, worstCount };
 }
 
 // ─── UI components ──────────────────────────────────────────────────────────────
@@ -426,7 +457,7 @@ function ScoreBar({ value, color, size = 'md' }) {
   return (
     <div className="flex items-center gap-2 min-w-0">
       <div className={`flex-1 ${h} rounded-full bg-white/10 overflow-hidden`}>
-        <div className={`h-full rounded-full transition-all`} style={{ width: `${w}%`, backgroundColor: color }} />
+        <div className="h-full rounded-full transition-all" style={{ width: `${w}%`, backgroundColor: color }} />
       </div>
       <span className="text-xs font-mono w-9 text-right" style={{ color: 'rgba(255,255,255,0.7)' }}>
         {value !== null && value !== undefined ? value.toFixed(1) : '—'}
@@ -443,6 +474,40 @@ function TagBadge({ label, color }) {
   );
 }
 
+// ─── Metric row в попover: название — исходное значение — балл ────────────────
+// rawLabel: что означает сырое число (например «% неотсканировано»)
+function MetricRow({ label, rawVal, rawLabel, score, color, inverted = false }) {
+  const hasData = score !== null && score !== undefined;
+  return (
+    <div className="flex items-start gap-2 py-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      <span className="text-xs w-20 flex-shrink-0 leading-tight" style={{ color: 'rgba(255,255,255,0.5)' }}>{label}</span>
+      <div className="flex-1 min-w-0">
+        {hasData ? (
+          <>
+            <div className="flex items-center gap-2 mb-1">
+              {rawVal !== null && rawVal !== undefined ? (
+                <span className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                  {rawVal.toFixed(1)}% {rawLabel && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>{rawLabel}</span>}
+                </span>
+              ) : (
+                <span className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>—</span>
+              )}
+              <span className="text-xs ml-auto flex-shrink-0 font-mono" style={{ color }}>
+                балл: {score.toFixed(1)}
+              </span>
+            </div>
+            <div className="h-1 rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${Math.min(Math.max(score, 0), 100)}%`, backgroundColor: color }} />
+            </div>
+          </>
+        ) : (
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>нет данных</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Store popover ─────────────────────────────────────────────────────────────
 function StorePopover({ store, x, y }) {
   const ref = useRef(null);
@@ -456,7 +521,7 @@ function StorePopover({ store, x, y }) {
     const vh = window.innerHeight;
     let left = x;
     let top = y;
-    if (left + w > vw - 12) left = x - w - 16; // flip left
+    if (left + w > vw - 12) left = x - w - 16;
     if (left < 8) left = 8;
     if (top + h > vh - 12) top = vh - h - 12;
     if (top < 8) top = 8;
@@ -465,18 +530,13 @@ function StorePopover({ store, x, y }) {
 
   const regionColor = store.region === 'СПБ' ? '#E91E8C' : '#8b5cf6';
 
-  const regMetrics = [
-    { label: 'Скан. обувь', value: store.scanAvg,    color: '#06b6d4' },
-    { label: 'ЮИ',          value: store.yuiAvg,     color: '#a78bfa' },
-    { label: 'Капсулы',     value: store.capsAvg,    color: '#f59e0b' },
-    { label: 'ИЗ',          value: store.izAvg,      color: '#34d399' },
-    { label: 'Цены',        value: store.pricingAvg, color: '#fb923c' },
-  ];
-
-  const salesMetrics = [
-    { label: 'Месяц', value: store.salesMonthScore, color: '#60a5fa' },
-    { label: 'День',  value: store.salesDayScore,   color: '#93c5fd' },
-  ];
+  // Цвет балла: выше 70 = зелёный, 40-70 = жёлтый, ниже 40 = красный
+  function scoreColor(v) {
+    if (v === null || v === undefined) return '#6b7280';
+    if (v >= 70) return '#34d399';
+    if (v >= 40) return '#fbbf24';
+    return '#f87171';
+  }
 
   return (
     <div
@@ -486,18 +546,19 @@ function StorePopover({ store, x, y }) {
         left: pos.left,
         top: pos.top,
         zIndex: 9999,
-        width: 280,
+        width: 320,
         backgroundColor: '#111827',
         border: '1px solid rgba(255,255,255,0.12)',
         borderRadius: 12,
         boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
         pointerEvents: 'none',
+        overflow: 'hidden',
       }}
     >
       {/* Header */}
-      <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-        <div className="text-sm font-semibold text-white leading-tight truncate">{store.store}</div>
-        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+      <div className="px-4 py-3" style={{ backgroundColor: '#1f2937', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="text-sm font-semibold text-white leading-tight">{store.store}</div>
+        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
           <TagBadge label={store.region} color={regionColor} />
           {store.subdiv && (
             <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>{store.subdiv}</span>
@@ -506,50 +567,45 @@ function StorePopover({ store, x, y }) {
       </div>
 
       {/* Регламенты */}
-      <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <p className="text-xs font-semibold uppercase tracking-wider mb-2.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
-          Регламенты
-        </p>
-        <div className="space-y-2">
-          {regMetrics.map(({ label, value, color }) => (
-            <div key={label} className="flex items-center gap-2">
-              <span className="text-xs w-24 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.55)' }}>{label}</span>
-              {value !== null && value !== undefined
-                ? <ScoreBar value={value} color={color} size="sm" />
-                : <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>нет данных</span>
-              }
-            </div>
-          ))}
+      <div className="px-4 pt-3 pb-1">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.3)' }}>Регламенты</p>
+          {store.regScore !== null && (
+            <span className="text-xs font-bold" style={{ color: scoreColor(store.regScore) }}>
+              итого {store.regScore.toFixed(1)}
+            </span>
+          )}
         </div>
-        {store.regScore !== null && (
-          <div className="flex items-center gap-2 mt-2.5 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-            <span className="text-xs w-24 flex-shrink-0 font-medium text-white">Итого</span>
-            <ScoreBar value={store.regScore} color="#10b981" size="sm" />
-          </div>
-        )}
+        <MetricRow label="Скан. обувь"  rawVal={store.scanRaw}    rawLabel="% неотскан."  score={store.scanAvg}    color={scoreColor(store.scanAvg)} />
+        <MetricRow label="ЮИ"           rawVal={store.yuiRaw}     rawLabel="% невыст."    score={store.yuiAvg}     color={scoreColor(store.yuiAvg)} />
+        <MetricRow label="Капсулы"      rawVal={store.capsRaw}    rawLabel="% неотскан."  score={store.capsAvg}    color={scoreColor(store.capsAvg)} />
+        <MetricRow label="ИЗ"           rawVal={store.izRaw}      rawLabel="% скан."      score={store.izAvg}      color={scoreColor(store.izAvg)} />
+        <MetricRow label="Цены"         rawVal={store.pricingRaw} rawLabel="% проблем"    score={store.pricingAvg} color={scoreColor(store.pricingAvg)} />
       </div>
 
       {/* Продажи */}
-      <div className="px-4 py-3">
-        <p className="text-xs font-semibold uppercase tracking-wider mb-2.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
-          Продажи
-        </p>
-        <div className="space-y-2">
-          {salesMetrics.map(({ label, value, color }) => (
-            <div key={label} className="flex items-center gap-2">
-              <span className="text-xs w-24 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.55)' }}>{label}</span>
-              {value !== null && value !== undefined
-                ? <ScoreBar value={value} color={color} size="sm" />
-                : <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>нет данных</span>
-              }
-            </div>
-          ))}
+      <div className="px-4 pt-2 pb-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.3)' }}>Продажи (месяц)</p>
+          {store.salesScore !== null && (
+            <span className="text-xs font-bold" style={{ color: scoreColor(store.salesScore) }}>
+              балл {store.salesScore.toFixed(1)}
+            </span>
+          )}
         </div>
-        {store.salesScore !== null && (
-          <div className="flex items-center gap-2 mt-2.5 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-            <span className="text-xs w-24 flex-shrink-0 font-medium text-white">Итого</span>
-            <ScoreBar value={store.salesScore} color="#60a5fa" size="sm" />
+        {store.salesRaw ? (
+          <div>
+            {store.salesRaw.map(({ label, raw }) => (
+              <div key={label} className="flex items-center gap-2 py-0.5">
+                <span className="text-xs w-24 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.45)' }}>{label}</span>
+                <span className="text-xs font-mono" style={{ color: raw !== null ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.2)' }}>
+                  {raw !== null ? raw.toFixed(1) : '—'}
+                </span>
+              </div>
+            ))}
           </div>
+        ) : (
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>нет данных</span>
         )}
       </div>
     </div>
@@ -667,7 +723,6 @@ function SubdivList({ items, worst = false, scoreKey = 'avgRegScore', onExport }
 export default function ItogiPage() {
   const {
     spbSalesMonth, belSalesMonth,
-    spbSalesDay, belSalesDay,
     spbScanning, belScanning,
     spbCapsule, belCapsule,
     spbJewelryItogi, belJewelryItogi,
@@ -675,13 +730,19 @@ export default function ItogiPage() {
     spbPricing, belPricing,
   } = useData();
 
-  const [activeTab, setActiveTab] = useState('reglaments');
-  const [topSubTab, setTopSubTab] = useState('worst');
-  const [spbSubTab, setSpbSubTab] = useState('worst');
-  const [belSubTab, setBelSubTab] = useState('worst');
+  // Основная вкладка ТОП: регламенты / продажи
+  const [activeTab, setActiveTab]   = useState('reglaments');
+  // Суб-вкладка ТОП: худшие / лучшие
+  const [topSubTab, setTopSubTab]   = useState('worst');
+  // Вкладка детализации СПБ и БЕЛ — общий переключатель регламенты/продажи для каждого
+  const [spbDetailTab, setSpbDetailTab] = useState('reglaments');
+  const [belDetailTab, setBelDetailTab] = useState('reglaments');
+  // Суб-вкладка худшие/лучшие в детализации
+  const [spbSubTab, setSpbSubTab]   = useState('worst');
+  const [belSubTab, setBelSubTab]   = useState('worst');
 
-  // Popover state
-  const [tooltip, setTooltip] = useState(null); // { store, x, y }
+  // Popover
+  const [tooltip, setTooltip] = useState(null);
   const tooltipTimerRef = useRef(null);
 
   function handleHover(store, rect) {
@@ -698,10 +759,10 @@ export default function ItogiPage() {
   useEffect(() => () => clearTimeout(tooltipTimerRef.current), []);
 
   const storeList = useMemo(() => buildStoreScores({
-    spbSalesMonth, belSalesMonth, spbSalesDay, belSalesDay,
+    spbSalesMonth, belSalesMonth,
     spbScanning, belScanning, spbCapsule, belCapsule,
     spbJewelryItogi, belJewelryItogi, spbIZ, belIZ, spbPricing, belPricing,
-  }), [spbSalesMonth, belSalesMonth, spbSalesDay, belSalesDay,
+  }), [spbSalesMonth, belSalesMonth,
        spbScanning, belScanning, spbCapsule, belCapsule,
        spbJewelryItogi, belJewelryItogi, spbIZ, belIZ, spbPricing, belPricing]);
 
@@ -712,6 +773,7 @@ export default function ItogiPage() {
   const spbStores = storeList.filter(s => s.region === 'СПБ');
   const belStores = storeList.filter(s => s.region === 'БЕЛ');
 
+  // ТОП-15 общий (СПБ+БЕЛ)
   const regTop    = storeList.filter(s => s.regScore   !== null).sort((a,b) => b.regScore   - a.regScore).slice(0,15);
   const regBottom = storeList.filter(s => s.regScore   !== null).sort((a,b) => a.regScore   - b.regScore).slice(0,15);
   const salTop    = storeList.filter(s => s.salesScore !== null).sort((a,b) => b.salesScore - a.salesScore).slice(0,15);
@@ -732,16 +794,35 @@ export default function ItogiPage() {
           { key: 'worst', label: 'Худшие', color: '#f87171' },
           { key: 'best',  label: 'Лучшие', color: '#10b981' },
         ].map(({ key, label, color }) => (
-          <button
-            key={key}
-            onClick={() => onChange(key)}
-            className="px-3 py-1.5 text-sm font-medium transition-colors"
+          <button key={key} onClick={() => onChange(key)} className="px-3 py-1.5 text-sm font-medium transition-colors"
             style={{
               backgroundColor: value === key ? color + '33' : 'transparent',
               color: value === key ? color : 'rgba(255,255,255,0.45)',
               borderRight: key === 'worst' ? '1px solid rgba(255,255,255,0.12)' : undefined,
             }}
           >
+            {label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  function TypeTabToggle({ value, onChange }) {
+    return (
+      <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'rgba(255,255,255,0.12)' }}>
+        {[
+          { key: 'reglaments', label: 'Регламенты', icon: ClipboardCheck },
+          { key: 'sales',      label: 'Продажи',    icon: BarChart2 },
+        ].map(({ key, label, icon: Icon }) => (
+          <button key={key} onClick={() => onChange(key)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors"
+            style={{
+              backgroundColor: value === key ? ACCENT : 'transparent',
+              color: value === key ? 'white' : 'rgba(255,255,255,0.5)',
+            }}
+          >
+            <Icon size={13} />
             {label}
           </button>
         ))}
@@ -810,14 +891,18 @@ export default function ItogiPage() {
               <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Регламенты</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <p className="text-xs font-semibold mb-3" style={{ color: '#f87171' }}>Худшие подразделения (топ-5)</p>
+                  <p className="text-xs font-semibold mb-3" style={{ color: '#f87171' }}>
+                    Худшие подразделения (топ-{regSubdivSplit.worstCount})
+                  </p>
                   <SubdivList
                     items={regSubdivSplit.worst.slice(0, 5)} worst scoreKey="avgRegScore"
                     onExport={() => exportSubdivs(regSubdivSplit.worst.slice(0, 5), 'Итоги_подразделения_регламенты_худшие')}
                   />
                 </div>
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <p className="text-xs font-semibold mb-3" style={{ color: '#10b981' }}>Лучшие подразделения (топ-4)</p>
+                  <p className="text-xs font-semibold mb-3" style={{ color: '#10b981' }}>
+                    Лучшие подразделения (топ-{regSubdivSplit.bestCount})
+                  </p>
                   <SubdivList
                     items={regSubdivSplit.best.slice(0, 4)} scoreKey="avgRegScore"
                     onExport={() => exportSubdivs(regSubdivSplit.best.slice(0, 4), 'Итоги_подразделения_регламенты_лучшие')}
@@ -825,17 +910,21 @@ export default function ItogiPage() {
                 </div>
               </div>
 
-              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Продажи</p>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Продажи (месяц)</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <p className="text-xs font-semibold mb-3" style={{ color: '#f87171' }}>Худшие подразделения (топ-5)</p>
+                  <p className="text-xs font-semibold mb-3" style={{ color: '#f87171' }}>
+                    Худшие подразделения (топ-{salSubdivSplit.worstCount})
+                  </p>
                   <SubdivList
                     items={salSubdivSplit.worst.slice(0, 5)} worst scoreKey="avgSalesScore"
                     onExport={() => exportSubdivs(salSubdivSplit.worst.slice(0, 5), 'Итоги_подразделения_продажи_худшие')}
                   />
                 </div>
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <p className="text-xs font-semibold mb-3" style={{ color: '#10b981' }}>Лучшие подразделения (топ-4)</p>
+                  <p className="text-xs font-semibold mb-3" style={{ color: '#10b981' }}>
+                    Лучшие подразделения (топ-{salSubdivSplit.bestCount})
+                  </p>
                   <SubdivList
                     items={salSubdivSplit.best.slice(0, 4)} scoreKey="avgSalesScore"
                     onExport={() => exportSubdivs(salSubdivSplit.best.slice(0, 4), 'Итоги_подразделения_продажи_лучшие')}
@@ -844,29 +933,11 @@ export default function ItogiPage() {
               </div>
             </div>
 
-            {/* ТОП магазинов */}
+            {/* ТОП-15 магазинов */}
             <div>
               <div className="flex items-center gap-3 mb-4 flex-wrap">
                 <h2 className="text-base font-semibold text-white">ТОП магазинов (СПБ + БЕЛ)</h2>
-                <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'rgba(255,255,255,0.12)' }}>
-                  {[
-                    { key: 'reglaments', label: 'Регламенты', icon: ClipboardCheck },
-                    { key: 'sales',      label: 'Продажи',    icon: BarChart2 },
-                  ].map(({ key, label, icon: Icon }) => (
-                    <button
-                      key={key}
-                      onClick={() => setActiveTab(key)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors"
-                      style={{
-                        backgroundColor: activeTab === key ? ACCENT : 'transparent',
-                        color: activeTab === key ? 'white' : 'rgba(255,255,255,0.5)',
-                      }}
-                    >
-                      <Icon size={13} />
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <TypeTabToggle value={activeTab} onChange={setActiveTab} />
                 <SubTabToggle value={topSubTab} onChange={setTopSubTab} />
               </div>
 
@@ -877,30 +948,30 @@ export default function ItogiPage() {
               )}
               {activeTab === 'reglaments' && (
                 <p className="text-xs mb-4" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                  Показатели регламентов: <span style={{ color: 'rgba(255,255,255,0.6)' }}>адресное обувь · адресное ЮИ · адресные капсулы · адресное ИЗ · цены на полупарах</span>
+                  Показатели регламентов: <span style={{ color: 'rgba(255,255,255,0.6)' }}>адресное обувь · ЮИ · капсулы · ИЗ · цены на полупарах</span>
                 </p>
               )}
 
               {activeTab === 'reglaments' && topSubTab === 'best'  && (
-                <TopTable title="ТОП-15 исполнительных" items={regTop} scoreKey="regScore" scoreName="балл"
+                <TopTable title="ТОП-15 исполнительных (регламенты)" items={regTop} scoreKey="regScore" scoreName="балл"
                   icon={Award} accentColor="#10b981"
                   onExport={() => exportStores(regTop, 'Итоги_ТОП15_регламенты_лучшие')}
                   onHover={handleHover} />
               )}
               {activeTab === 'reglaments' && topSubTab === 'worst' && (
-                <TopTable title="ТОП-15 проблемных" items={regBottom} scoreKey="regScore" scoreName="балл"
+                <TopTable title="ТОП-15 проблемных (регламенты)" items={regBottom} scoreKey="regScore" scoreName="балл"
                   icon={AlertTriangle} accentColor="#ef4444" worst
                   onExport={() => exportStores(regBottom, 'Итоги_ТОП15_регламенты_худшие')}
                   onHover={handleHover} />
               )}
               {activeTab === 'sales' && topSubTab === 'best'  && (
-                <TopTable title="ТОП-15 лучших по продажам" items={salTop} scoreKey="salesScore" scoreName="индекс"
+                <TopTable title="ТОП-15 лучших (продажи, месяц)" items={salTop} scoreKey="salesScore" scoreName="балл"
                   icon={TrendingUp} accentColor="#10b981"
                   onExport={() => exportStores(salTop, 'Итоги_ТОП15_продажи_лучшие')}
                   onHover={handleHover} />
               )}
               {activeTab === 'sales' && topSubTab === 'worst' && (
-                <TopTable title="ТОП-15 отстающих по продажам" items={salBottom} scoreKey="salesScore" scoreName="индекс"
+                <TopTable title="ТОП-15 отстающих (продажи, месяц)" items={salBottom} scoreKey="salesScore" scoreName="балл"
                   icon={TrendingDown} accentColor="#ef4444" worst
                   onExport={() => exportStores(salBottom, 'Итоги_ТОП15_продажи_худшие')}
                   onHover={handleHover} />
@@ -910,48 +981,45 @@ export default function ItogiPage() {
             {/* Детализация по регионам */}
             <div className="space-y-10">
               {[
-                { region: 'СПБ', color: '#E91E8C', stores: spbStores, subTab: spbSubTab, setSubTab: setSpbSubTab },
-                { region: 'БЕЛ', color: '#8b5cf6', stores: belStores, subTab: belSubTab, setSubTab: setBelSubTab },
-              ].map(({ region, color, stores, subTab, setSubTab }) => (
+                { region: 'СПБ', color: '#E91E8C', stores: spbStores, detailTab: spbDetailTab, setDetailTab: setSpbDetailTab, subTab: spbSubTab, setSubTab: setSpbSubTab },
+                { region: 'БЕЛ', color: '#8b5cf6', stores: belStores, detailTab: belDetailTab, setDetailTab: setBelDetailTab, subTab: belSubTab, setSubTab: setBelSubTab },
+              ].map(({ region, color, stores, detailTab, setDetailTab, subTab, setSubTab }) => (
                 <div key={region}>
-                  <div className="flex items-center gap-3 mb-5 flex-wrap">
+                  <div className="flex items-center gap-3 mb-4 flex-wrap">
                     <TagBadge label={region} color={color} />
                     <h2 className="text-base font-semibold text-white">Магазины — {region}</h2>
+                    <TypeTabToggle value={detailTab} onChange={setDetailTab} />
                     <SubTabToggle value={subTab} onChange={setSubTab} />
                   </div>
-                  <div className="space-y-5">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: 'rgba(255,255,255,0.35)' }}>Продажи</p>
-                      <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.3)' }}>{SALES_SCORE_LABELS}</p>
-                      {subTab === 'best' && (
-                        <TopTable title={`ТОП-15 по продажам (${region})`} items={makeSalTop(stores)}
-                          scoreKey="salesScore" scoreName="индекс" icon={TrendingUp} accentColor="#10b981"
-                          onExport={() => exportStores(makeSalTop(stores), `Итоги_${region}_продажи_лучшие`)}
-                          onHover={handleHover} />
-                      )}
-                      {subTab === 'worst' && (
-                        <TopTable title={`Отстающие по продажам (${region})`} items={makeSalBottom(stores)}
-                          scoreKey="salesScore" scoreName="индекс" icon={TrendingDown} accentColor="#ef4444" worst
-                          onExport={() => exportStores(makeSalBottom(stores), `Итоги_${region}_продажи_худшие`)}
-                          onHover={handleHover} />
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Регламенты</p>
-                      {subTab === 'best' && (
-                        <TopTable title={`ТОП-15 по регламентам (${region})`} items={makeRegTop(stores)}
-                          scoreKey="regScore" scoreName="балл" icon={Award} accentColor="#10b981"
-                          onExport={() => exportStores(makeRegTop(stores), `Итоги_${region}_регламенты_лучшие`)}
-                          onHover={handleHover} />
-                      )}
-                      {subTab === 'worst' && (
-                        <TopTable title={`Проблемные по регламентам (${region})`} items={makeRegBottom(stores)}
-                          scoreKey="regScore" scoreName="балл" icon={AlertTriangle} accentColor="#ef4444" worst
-                          onExport={() => exportStores(makeRegBottom(stores), `Итоги_${region}_регламенты_худшие`)}
-                          onHover={handleHover} />
-                      )}
-                    </div>
-                  </div>
+
+                  {detailTab === 'sales' && (
+                    <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.3)' }}>{SALES_SCORE_LABELS}</p>
+                  )}
+
+                  {detailTab === 'reglaments' && subTab === 'best' && (
+                    <TopTable title={`ТОП-15 по регламентам (${region})`} items={makeRegTop(stores)}
+                      scoreKey="regScore" scoreName="балл" icon={Award} accentColor="#10b981"
+                      onExport={() => exportStores(makeRegTop(stores), `Итоги_${region}_регламенты_лучшие`)}
+                      onHover={handleHover} />
+                  )}
+                  {detailTab === 'reglaments' && subTab === 'worst' && (
+                    <TopTable title={`Проблемные по регламентам (${region})`} items={makeRegBottom(stores)}
+                      scoreKey="regScore" scoreName="балл" icon={AlertTriangle} accentColor="#ef4444" worst
+                      onExport={() => exportStores(makeRegBottom(stores), `Итоги_${region}_регламенты_худшие`)}
+                      onHover={handleHover} />
+                  )}
+                  {detailTab === 'sales' && subTab === 'best' && (
+                    <TopTable title={`ТОП-15 по продажам (${region})`} items={makeSalTop(stores)}
+                      scoreKey="salesScore" scoreName="балл" icon={TrendingUp} accentColor="#10b981"
+                      onExport={() => exportStores(makeSalTop(stores), `Итоги_${region}_продажи_лучшие`)}
+                      onHover={handleHover} />
+                  )}
+                  {detailTab === 'sales' && subTab === 'worst' && (
+                    <TopTable title={`Отстающие по продажам (${region})`} items={makeSalBottom(stores)}
+                      scoreKey="salesScore" scoreName="балл" icon={TrendingDown} accentColor="#ef4444" worst
+                      onExport={() => exportStores(makeSalBottom(stores), `Итоги_${region}_продажи_худшие`)}
+                      onHover={handleHover} />
+                  )}
                 </div>
               ))}
             </div>
@@ -959,7 +1027,7 @@ export default function ItogiPage() {
         )}
       </div>
 
-      {/* Store popover (fixed, above everything) */}
+      {/* Store popover */}
       {tooltip && (
         <StorePopover store={tooltip.store} x={tooltip.x} y={tooltip.y} />
       )}
