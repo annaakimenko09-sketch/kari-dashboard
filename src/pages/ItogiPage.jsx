@@ -121,7 +121,7 @@ function exportStores(items, filename, mode = 'reglaments') {
 
   if (mode === 'reglaments') {
     headers = ['#', 'Регион', 'Подразделение', 'Магазин', 'ТЦ',
-      'Скан.% неотскан', 'ЮИ% невыст', 'Капс.% неотскан', 'ИЗ% скан', 'Цены% проблем',
+      'Скан.% неотскан', 'ЮИ% невыст', 'Капс.% неотскан', 'ИЗ% скан', 'Цены% ПП без ценн.',
       'Балл скан', 'Балл ЮИ', 'Балл капсул', 'Балл ИЗ', 'Балл цен', 'Балл регламент'];
     rows = items.map((s, i) => [
       i + 1, s.region, s.subdiv || '—', s.store, s.tc || '—',
@@ -276,14 +276,10 @@ function izScore(row) {
 }
 
 function pricingScore(row) {
-  const badVals = [row.c0, row.c1, row.c2, row.c3, row.c4].map(v => pct(v)).filter(v => v !== null);
-  const good = pct(row.c5);
-  if (!badVals.length && good === null) return { score: null, raw: null };
-  const scores = [];
-  if (badVals.length) scores.push(100 - avg(...badVals));
-  if (good !== null) scores.push(good);
-  const badAvg = badVals.length ? avg(...badVals) : null;
-  return { score: avg(...scores), raw: badAvg }; // raw = средний % проблем с ценами
+  // Use only c0 = % ПП без ценников (first column from pricing report)
+  const raw = pct(row.c0);
+  if (raw === null) return { score: null, raw: null };
+  return { score: Math.max(0, 100 - raw), raw };
 }
 
 // ─── Build unified store list ──────────────────────────────────────────────────
@@ -850,7 +846,7 @@ function StorePopover({ store, x, y }) {
         <MetricRow label="ЮИ"           rawVal={store.yuiRaw}     rawLabel="% невыст."    score={store.yuiAvg}     color={scoreColor(store.yuiAvg)} />
         <MetricRow label="Капсулы"      rawVal={store.capsRaw}    rawLabel="% неотскан."  score={store.capsAvg}    color={scoreColor(store.capsAvg)} />
         <MetricRow label="ИЗ"           rawVal={store.izRaw}      rawLabel="% скан."      score={store.izAvg}      color={scoreColor(store.izAvg)} />
-        <MetricRow label="Цены"         rawVal={store.pricingRaw} rawLabel="% проблем"    score={store.pricingAvg} color={scoreColor(store.pricingAvg)} />
+        <MetricRow label="Цены"         rawVal={store.pricingRaw} rawLabel="% ПП без ценн."    score={store.pricingAvg} color={scoreColor(store.pricingAvg)} />
       </div>
 
       {/* Продажи */}
@@ -979,7 +975,7 @@ function SubdivPopover({ subdiv, storeList, mode, x, y }) {
           <MetricRow label="ЮИ"          rawVal={yuiRaw}     rawLabel="% невыст."    score={yuiAvg}     color={scoreColor(yuiAvg)} />
           <MetricRow label="Капсулы"     rawVal={capsRaw}    rawLabel="% неотскан."  score={capsAvg}    color={scoreColor(capsAvg)} />
           <MetricRow label="ИЗ"          rawVal={izRaw}      rawLabel="% скан."      score={izAvg}      color={scoreColor(izAvg)} />
-          <MetricRow label="Цены"        rawVal={pricingRaw} rawLabel="% проблем"    score={pricingAvg} color={scoreColor(pricingAvg)} />
+          <MetricRow label="Цены"        rawVal={pricingRaw} rawLabel="% ПП без ценн."    score={pricingAvg} color={scoreColor(pricingAvg)} />
         </div>
       )}
 
