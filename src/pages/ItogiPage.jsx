@@ -74,44 +74,57 @@ function extractSalesStores(salesFile) {
 }
 
 // ─── Регламенты: score per store ─────────────────────────────────────────────
+// Используем: сканирование обуви, ЮИ, капсулы, ИЗ, цены на полупарах
+// Вывозы УБРАНЫ
 
-// Вывозы: 'Отгружено товара %' — higher better; 'Вычерк по сборке %' — lower better
-function vyvozScore(row) {
-  const shipped = pct(row['Отгружено товара %']);
-  const writeoff = pct(row['Вычерк по сборке %']);
-  if (shipped === null) return null;
-  const pen = writeoff !== null ? writeoff : 0;
-  return shipped - pen * 0.5;
-}
-
-// Сканирование обуви: scanPct = % НЕ отсканированных → чем выше — хуже → инвертируем
-// scanPct=100 означает ничего не сканировали → балл=0
-// scanPct=0 означает всё отсканировано → балл=100
+// Сканирование обуви: scanPct = % НЕ отсканированных → инвертируем (ниже % = лучше)
 function scanScore(row) {
   const v = pct(row.scanPct);
   return v !== null ? Math.max(0, 100 - v) : null;
 }
 
-// Капсулы: % Неотсканировано — lower better → invert
-function capsuleScore(row) {
-  const v = pct(row.notScannedPct ?? row['% Неотскан'] ?? row.pct);
-  return v !== null ? Math.max(0, 100 - v) : null;
-}
-
 // ЮИ: pct = % невыставленного → lower better → invert
+// Если данных нет (магазин без ЮИ) — возвращаем null, не берём в расчёт
 function yuiScore(row) {
   const v = pct(row.pct);
   return v !== null ? Math.max(0, 100 - v) : null;
 }
 
+// Капсулы: % Неотсканировано — lower better → invert
+// Если данных нет (магазин без капсул) — null
+function capsuleScore(row) {
+  const v = pct(row.notScannedPct ?? row['% Неотскан'] ?? row.pct);
+  return v !== null ? Math.max(0, 100 - v) : null;
+}
+
+// ИЗ: scanShare = % сканирования интернет-заказов → higher better, уже в %
+function izScore(row) {
+  return pct(row.scanShare);
+}
+
+// Цены на полупарах: среднее по проблемным % (c0–c4), все lower better → invert
+// c5 = % ПП с правильным ценником → higher better, берём напрямую
+function pricingScore(row) {
+  const bad = [row.c0, row.c1, row.c2, row.c3, row.c4]
+    .map(v => pct(v))
+    .filter(v => v !== null);
+  const good = pct(row.c5);
+  if (!bad.length && good === null) return null;
+  const scores = [];
+  if (bad.length) scores.push(100 - avg(...bad));
+  if (good !== null) scores.push(good);
+  return avg(...scores);
+}
+
 // ─── Build unified store list with all scores ─────────────────────────────────
 function buildStoreScores({
-  summaryData,
   spbSalesMonth, belSalesMonth,
   spbSalesDay, belSalesDay,
   spbScanning, belScanning,
   spbCapsule, belCapsule,
   spbJewelryItogi, belJewelryItogi,
+  spbIZ, belIZ,
+  spbPricing, belPricing,
 }) {
   const map = {};
 
@@ -123,21 +136,10 @@ function buildStoreScores({
     const k = key(region, store);
     if (!map[k]) map[k] = {
       region, store, subdiv,
-      vyvozScores: [], scanScores: [], capsuleScores: [], yuiScores: [],
+      scanScores: [], capsuleScores: [], yuiScores: [], izScores: [], pricingScores: [],
       salesMonthScore: null, salesDayScore: null,
     };
     return map[k];
-  }
-
-  // ── Вывозы ──
-  for (const row of (summaryData || [])) {
-    const region = regionOf(row);
-    if (!region) continue;
-    const store = storeLabel(row);
-    if (!store) continue;
-    const subdiv = subdivOf(row);
-    const s = vyvozScore(row);
-    if (s !== null) ensure(region, store, subdiv).vyvozScores.push(s);
   }
 
   // ── Сканирование обуви ──
@@ -147,27 +149,12 @@ function buildStoreScores({
     for (const row of (sf.stores || [])) {
       const store = storeLabel(row);
       if (!store) continue;
-      const subdiv = subdivOf(row);
       const s = scanScore(row);
-      if (s !== null) ensure(region, store, subdiv).scanScores.push(s);
+      if (s !== null) ensure(region, store, subdivOf(row)).scanScores.push(s);
     }
   }
 
-  // ── Капсулы ──
-  for (const cf of [spbCapsule, belCapsule]) {
-    if (!cf) continue;
-    const region = cf.fileRegion === 'ALL' ? null : cf.fileRegion;
-    for (const row of (cf.stores || [])) {
-      const r = region || regionOf(row) || 'СПБ';
-      const store = storeLabel(row);
-      if (!store) continue;
-      const subdiv = subdivOf(row);
-      const s = capsuleScore(row);
-      if (s !== null) ensure(r, store, subdiv).capsuleScores.push(s);
-    }
-  }
-
-  // ── ЮИ ──
+  // ── ЮИ ── (только магазины с данными)
   for (const jf of [spbJewelryItogi, belJewelryItogi]) {
     if (!jf) continue;
     const region = jf.fileRegion === 'ALL' ? null : jf.fileRegion;
@@ -176,9 +163,52 @@ function buildStoreScores({
       if (!r) continue;
       const store = storeLabel(row);
       if (!store) continue;
-      const subdiv = subdivOf(row);
       const s = yuiScore(row);
-      if (s !== null) ensure(r, store, subdiv).yuiScores.push(s);
+      if (s !== null) ensure(r, store, subdivOf(row)).yuiScores.push(s);
+    }
+  }
+
+  // ── Капсулы ── (только магазины с данными)
+  for (const cf of [spbCapsule, belCapsule]) {
+    if (!cf) continue;
+    const region = cf.fileRegion === 'ALL' ? null : cf.fileRegion;
+    for (const row of (cf.stores || [])) {
+      const r = region || regionOf(row) || 'СПБ';
+      const store = storeLabel(row);
+      if (!store) continue;
+      const s = capsuleScore(row);
+      if (s !== null) ensure(r, store, subdivOf(row)).capsuleScores.push(s);
+    }
+  }
+
+  // ── Адресное ИЗ ──
+  for (const iz of [spbIZ, belIZ]) {
+    if (!iz) continue;
+    const region = iz.fileRegion === 'ALL' ? null : iz.fileRegion;
+    // ИЗ файл содержит stores (месяц/неделя/день — берём первый доступный)
+    const sheet = iz.month || iz.week || iz.day || iz;
+    const rows = sheet?.stores || [];
+    for (const row of rows) {
+      const r = region || regionOf(row);
+      if (!r) continue;
+      const store = storeLabel(row);
+      if (!store) continue;
+      const s = izScore(row);
+      if (s !== null) ensure(r, store, subdivOf(row)).izScores.push(s);
+    }
+  }
+
+  // ── Цены на полупарах ──
+  for (const pf of [spbPricing, belPricing]) {
+    if (!pf) continue;
+    const region = pf.fileRegion === 'ALL' ? null : pf.fileRegion;
+    for (const row of (pf.stores || [])) {
+      const r = region || regionOf(row);
+      if (!r) continue;
+      const store = storeLabel(row);
+      if (!store) continue;
+      const s = pricingScore(row);
+      if (s !== null) ensure(r, store, subdivOf(row)).pricingScores.push(s);
     }
   }
 
@@ -188,7 +218,7 @@ function buildStoreScores({
     const region = sf.fileRegion;
     const stores = extractSalesStores(sf);
     const withScores = normalizeScores(stores.map(r => ({
-      row: r, score: salesScore(r),
+      score: salesScore(r),
       store: String(r['_c3'] || r['Магазин'] || '').trim(),
       subdiv: String(r['_c1'] || r['Подразделение'] || '').trim(),
     })));
@@ -206,7 +236,7 @@ function buildStoreScores({
     const region = sf.fileRegion;
     const stores = extractSalesStores(sf);
     const withScores = normalizeScores(stores.map(r => ({
-      row: r, score: salesScore(r),
+      score: salesScore(r),
       store: String(r['_c3'] || r['Магазин'] || '').trim(),
       subdiv: String(r['_c1'] || r['Подразделение'] || '').trim(),
     })));
@@ -220,13 +250,16 @@ function buildStoreScores({
 
   // ── Composite ──
   return Object.values(map).map(obj => {
-    const vyvozAvg   = obj.vyvozScores.length   ? avg(...obj.vyvozScores)   : null;
-    const scanAvg    = obj.scanScores.length     ? avg(...obj.scanScores)    : null;
-    const capsAvg    = obj.capsuleScores.length  ? avg(...obj.capsuleScores) : null;
-    const yuiAvg     = obj.yuiScores.length      ? avg(...obj.yuiScores)     : null;
-    const regScore   = avg(...[vyvozAvg, scanAvg, capsAvg, yuiAvg].filter(v => v !== null));
+    const scanAvg    = obj.scanScores.length    ? avg(...obj.scanScores)    : null;
+    // ЮИ, капсулы, ИЗ, цены — только если есть данные для этого магазина
+    const yuiAvg     = obj.yuiScores.length     ? avg(...obj.yuiScores)     : null;
+    const capsAvg    = obj.capsuleScores.length ? avg(...obj.capsuleScores) : null;
+    const izAvg      = obj.izScores.length      ? avg(...obj.izScores)      : null;
+    const pricingAvg = obj.pricingScores.length ? avg(...obj.pricingScores) : null;
+    // regScore = среднее только по тем показателям, что есть для данного магазина
+    const regScore   = avg(...[scanAvg, yuiAvg, capsAvg, izAvg, pricingAvg].filter(v => v !== null));
     const salesScore = avg(...[obj.salesMonthScore, obj.salesDayScore].filter(v => v !== null));
-    return { ...obj, vyvozAvg, scanAvg, capsAvg, yuiAvg, regScore, salesScore };
+    return { ...obj, scanAvg, yuiAvg, capsAvg, izAvg, pricingAvg, regScore, salesScore };
   });
 }
 
@@ -262,12 +295,12 @@ function buildInsights(storeList, subdivScores) {
       const bad = stores.filter(s => s.regScore < avgReg * 0.7).length;
       if (bad > 0) insights.push({ type: 'warn', text: `${region}: ${bad} магазин(ов) значительно ниже среднего по регламентам (ср. балл ${avgReg.toFixed(0)})` });
     }
-    // Низкое сканирование обуви (scanAvg < 40 после инверсии означает >60% не отсканировано)
+    // Низкое сканирование обуви (scanAvg < 40 = >60% не отсканировано)
     const lowScan = stores.filter(s => s.scanAvg !== null && s.scanAvg < 40);
     if (lowScan.length > 2) insights.push({ type: 'warn', text: `${region}: ${lowScan.length} магазин(ов) с долей неотсканированной обуви >60%` });
-    // Хорошие вывозы
-    const topVyvoz = stores.filter(s => s.vyvozAvg !== null && s.vyvozAvg > 90);
-    if (topVyvoz.length > 0) insights.push({ type: 'ok', text: `${region}: ${topVyvoz.length} магазин(ов) с показателем вывозов >90%` });
+    // Хорошие цены
+    const goodPricing = stores.filter(s => s.pricingAvg !== null && s.pricingAvg > 85);
+    if (goodPricing.length > 0) insights.push({ type: 'ok', text: `${region}: ${goodPricing.length} магазин(ов) с отличным соблюдением цен на полупарах (>85 баллов)` });
   }
 
   // Слабые подразделения
@@ -353,11 +386,16 @@ function TopTable({ title, items, scoreKey, scoreName, icon: Icon, accentColor, 
 
 // Подразделения — СПБ+БЕЛ вместе
 // scoreKey: 'avgRegScore' | 'avgSalesScore'
-function SubdivTable({ subdivs, worst = false, scoreKey = 'avgRegScore' }) {
-  const sorted = subdivs
+function SubdivTable({ subdivs, worst = false, scoreKey = 'avgRegScore', limit = 9 }) {
+  // Сортируем всё: для worst=true → по возрастанию (худший первый),
+  //               для worst=false → по убыванию (лучший первый)
+  const all = subdivs
     .filter(d => d[scoreKey] !== null && d[scoreKey] !== undefined)
-    .sort((a, b) => worst ? a[scoreKey] - b[scoreKey] : b[scoreKey] - a[scoreKey])
-    .slice(0, 9);
+    .sort((a, b) => worst ? a[scoreKey] - b[scoreKey] : b[scoreKey] - a[scoreKey]);
+  const total = all.length;
+  const half = Math.ceil(total / 2);
+  // Худшие — нижняя половина; лучшие — верхняя половина. Нет пересечений.
+  const sorted = all.slice(0, Math.min(limit, half));
 
   if (!sorted.length) return <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Нет данных</p>;
 
@@ -382,25 +420,28 @@ function SubdivTable({ subdivs, worst = false, scoreKey = 'avgRegScore' }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ItogiPage() {
   const {
-    summaryData,
     spbSalesMonth, belSalesMonth,
     spbSalesDay, belSalesDay,
     spbScanning, belScanning,
     spbCapsule, belCapsule,
     spbJewelryItogi, belJewelryItogi,
+    spbIZ, belIZ,
+    spbPricing, belPricing,
   } = useData();
 
   const [activeTab, setActiveTab] = useState('reglaments');
 
   const storeList = useMemo(() => buildStoreScores({
-    summaryData,
     spbSalesMonth, belSalesMonth,
     spbSalesDay, belSalesDay,
     spbScanning, belScanning,
     spbCapsule, belCapsule,
     spbJewelryItogi, belJewelryItogi,
-  }), [summaryData, spbSalesMonth, belSalesMonth, spbSalesDay, belSalesDay,
-       spbScanning, belScanning, spbCapsule, belCapsule, spbJewelryItogi, belJewelryItogi]);
+    spbIZ, belIZ,
+    spbPricing, belPricing,
+  }), [spbSalesMonth, belSalesMonth, spbSalesDay, belSalesDay,
+       spbScanning, belScanning, spbCapsule, belCapsule,
+       spbJewelryItogi, belJewelryItogi, spbIZ, belIZ, spbPricing, belPricing]);
 
   const subdivScores = useMemo(() => buildSubdivScores(storeList), [storeList]);
   const insights     = useMemo(() => buildInsights(storeList, subdivScores), [storeList, subdivScores]);
@@ -466,42 +507,42 @@ export default function ItogiPage() {
               </div>
             )}
 
-            {/* Подразделения — СПБ и БЕЛ вместе, 2 блока: регламенты и продажи */}
+            {/* Подразделения — СПБ и БЕЛ вместе */}
             <div>
               <h2 className="text-base font-semibold text-white mb-1 flex items-center gap-2">
                 <AlertTriangle size={15} style={{ color: '#f59e0b' }} />
                 Подразделения
                 <span className="text-xs font-normal ml-1" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                  СПБ + БЕЛ вместе
+                  СПБ + БЕЛ вместе · баллы 0–100 (выше = лучше)
                 </span>
               </h2>
-              <p className="text-xs mb-4" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                Баллы 0–100: выше = лучше. Регламенты = вывозы + сканирование обуви + капсулы + ЮИ. Продажи = план%, ТО LFL, КОП, ЮИ%, штук в чеке.
+              <p className="text-xs mb-5" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                Регламенты = адресное обувь + ЮИ + капсулы + ИЗ + цены на полупарах (только по тем показателям, которые есть у магазина)
               </p>
 
-              {/* Регламенты */}
+              {/* Регламенты: 2 столбца — худшие / лучшие */}
               <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Регламенты</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <p className="text-xs font-semibold mb-4" style={{ color: '#f87171' }}>Слабые подразделения</p>
-                  <SubdivTable subdivs={subdivScores} worst scoreKey="avgRegScore" />
+                  <p className="text-xs font-semibold mb-4" style={{ color: '#f87171' }}>Худшие подразделения</p>
+                  <SubdivTable subdivs={subdivScores} worst scoreKey="avgRegScore" limit={9} />
                 </div>
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <p className="text-xs font-semibold mb-4" style={{ color: '#10b981' }}>Сильные подразделения</p>
-                  <SubdivTable subdivs={subdivScores} worst={false} scoreKey="avgRegScore" />
+                  <p className="text-xs font-semibold mb-4" style={{ color: '#10b981' }}>Лучшие подразделения</p>
+                  <SubdivTable subdivs={subdivScores} worst={false} scoreKey="avgRegScore" limit={9} />
                 </div>
               </div>
 
-              {/* Продажи */}
+              {/* Продажи: 2 столбца — худшие / лучшие */}
               <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Продажи</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <p className="text-xs font-semibold mb-4" style={{ color: '#f87171' }}>Слабые подразделения</p>
-                  <SubdivTable subdivs={subdivScores} worst scoreKey="avgSalesScore" />
+                  <p className="text-xs font-semibold mb-4" style={{ color: '#f87171' }}>Худшие подразделения</p>
+                  <SubdivTable subdivs={subdivScores} worst scoreKey="avgSalesScore" limit={9} />
                 </div>
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <p className="text-xs font-semibold mb-4" style={{ color: '#10b981' }}>Сильные подразделения</p>
-                  <SubdivTable subdivs={subdivScores} worst={false} scoreKey="avgSalesScore" />
+                  <p className="text-xs font-semibold mb-4" style={{ color: '#10b981' }}>Лучшие подразделения</p>
+                  <SubdivTable subdivs={subdivScores} worst={false} scoreKey="avgSalesScore" limit={9} />
                 </div>
               </div>
             </div>
