@@ -617,6 +617,149 @@ function StorePopover({ store, x, y }) {
   );
 }
 
+// ─── Subdiv popover ────────────────────────────────────────────────────────────
+function SubdivPopover({ subdiv, storeList, x, y }) {
+  const ref = useRef(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const w = ref.current.offsetWidth;
+    const h = ref.current.offsetHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = x;
+    let top = y;
+    if (left + w > vw - 12) left = x - w - 16;
+    if (left < 8) left = 8;
+    if (top + h > vh - 12) top = vh - h - 12;
+    if (top < 8) top = 8;
+    setPos({ left, top });
+  }, [x, y]);
+
+  function scoreColor(v) {
+    if (v === null || v === undefined) return '#6b7280';
+    if (v >= 70) return '#34d399';
+    if (v >= 40) return '#fbbf24';
+    return '#f87171';
+  }
+
+  // Магазины этого подразделения
+  const stores = storeList
+    .filter(s => (s.subdiv || '—') === (subdiv.subdiv || '—'))
+    .sort((a, b) => (b.regScore ?? -1) - (a.regScore ?? -1));
+
+  // Средние по регламентным метрикам
+  function avgOf(arr) {
+    const nums = arr.filter(v => v !== null && v !== undefined);
+    return nums.length ? avg(...nums) : null;
+  }
+  const scanAvg    = avgOf(stores.map(s => s.scanAvg));
+  const yuiAvg     = avgOf(stores.map(s => s.yuiAvg));
+  const capsAvg    = avgOf(stores.map(s => s.capsAvg));
+  const izAvg      = avgOf(stores.map(s => s.izAvg));
+  const pricingAvg = avgOf(stores.map(s => s.pricingAvg));
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: 'fixed',
+        left: pos.left,
+        top: pos.top,
+        zIndex: 9999,
+        width: 360,
+        maxHeight: '80vh',
+        overflowY: 'auto',
+        backgroundColor: '#111827',
+        border: '1px solid rgba(255,255,255,0.12)',
+        borderRadius: 12,
+        boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+        pointerEvents: 'none',
+      }}
+    >
+      {/* Header */}
+      <div className="px-4 py-3 sticky top-0" style={{ backgroundColor: '#1f2937', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="text-sm font-semibold text-white">{subdiv.subdiv || '—'}</div>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>{subdiv.regionsLabel}</span>
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>·</span>
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>{stores.length} магазин{stores.length === 1 ? '' : stores.length < 5 ? 'а' : 'ов'}</span>
+        </div>
+      </div>
+
+      {/* Средние по регламентам */}
+      <div className="px-4 pt-3 pb-1">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.3)' }}>Регламенты (среднее)</p>
+          {subdiv.avgRegScore !== null && subdiv.avgRegScore !== undefined && (
+            <span className="text-xs font-bold" style={{ color: scoreColor(subdiv.avgRegScore) }}>
+              итого {subdiv.avgRegScore.toFixed(1)}
+            </span>
+          )}
+        </div>
+        <MetricRow label="Скан. обувь" rawVal={null} rawLabel="" score={scanAvg}    color={scoreColor(scanAvg)} />
+        <MetricRow label="ЮИ"          rawVal={null} rawLabel="" score={yuiAvg}     color={scoreColor(yuiAvg)} />
+        <MetricRow label="Капсулы"     rawVal={null} rawLabel="" score={capsAvg}    color={scoreColor(capsAvg)} />
+        <MetricRow label="ИЗ"          rawVal={null} rawLabel="" score={izAvg}      color={scoreColor(izAvg)} />
+        <MetricRow label="Цены"        rawVal={null} rawLabel="" score={pricingAvg} color={scoreColor(pricingAvg)} />
+      </div>
+
+      {/* Продажи (средний балл) */}
+      <div className="px-4 pt-2 pb-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.3)' }}>Продажи (месяц)</p>
+          {subdiv.avgSalesScore !== null && subdiv.avgSalesScore !== undefined && (
+            <span className="text-xs font-bold" style={{ color: scoreColor(subdiv.avgSalesScore) }}>
+              балл {subdiv.avgSalesScore.toFixed(1)}
+            </span>
+          )}
+        </div>
+        {subdiv.avgSalesScore === null || subdiv.avgSalesScore === undefined ? (
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>нет данных</span>
+        ) : (
+          <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mt-2">
+            <div className="h-full rounded-full" style={{ width: `${Math.min(Math.max(subdiv.avgSalesScore, 0), 100)}%`, backgroundColor: scoreColor(subdiv.avgSalesScore) }} />
+          </div>
+        )}
+      </div>
+
+      {/* Список магазинов */}
+      {stores.length > 0 && (
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.3)' }}>
+            Магазины
+          </p>
+          <div className="divide-y pb-2" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+            {stores.map((s, i) => (
+              <div key={i} className="px-4 py-1.5 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-white truncate leading-tight">{s.store}</div>
+                  <div className="flex gap-1.5 mt-0.5">
+                    <TagBadge label={s.region} color={s.region === 'СПБ' ? '#E91E8C' : '#8b5cf6'} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {s.regScore !== null && (
+                    <span className="text-xs font-mono" style={{ color: scoreColor(s.regScore) }}>
+                      рег: {s.regScore.toFixed(0)}
+                    </span>
+                  )}
+                  {s.salesScore !== null && (
+                    <span className="text-xs font-mono" style={{ color: scoreColor(s.salesScore) }}>
+                      прод: {s.salesScore.toFixed(0)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── TopTable with export + popover ─────────────────────────────────────────────
 function TopTable({ title, items, scoreKey, scoreName, icon: Icon, accentColor, worst = false, onExport, onHover }) {
   if (!items.length) {
@@ -689,7 +832,7 @@ function TopTable({ title, items, scoreKey, scoreName, icon: Icon, accentColor, 
   );
 }
 
-function SubdivList({ items, worst = false, scoreKey = 'avgRegScore', onExport }) {
+function SubdivList({ items, worst = false, scoreKey = 'avgRegScore', onExport, onHover }) {
   if (!items.length) return <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Нет данных</p>;
   return (
     <div>
@@ -708,7 +851,22 @@ function SubdivList({ items, worst = false, scoreKey = 'avgRegScore', onExport }
       )}
       <div className="space-y-2">
         {items.map((d, i) => (
-          <div key={i} className="flex items-center gap-3">
+          <div
+            key={i}
+            className="flex items-center gap-3 rounded-lg px-2 -mx-2 cursor-default"
+            style={{ transition: 'background 0.1s' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
+              if (onHover) {
+                const rect = e.currentTarget.getBoundingClientRect();
+                onHover(d, rect);
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '';
+              if (onHover) onHover(null, null);
+            }}
+          >
             <span className="w-5 text-xs text-center flex-shrink-0" style={{ color: worst ? '#f87171' : '#facc15' }}>{i + 1}</span>
             <div className="flex-1 min-w-0 flex items-center gap-2">
               <span className="text-sm text-white truncate">{d.subdiv || '—'}</span>
@@ -746,7 +904,7 @@ export default function ItogiPage() {
   const [spbSubTab, setSpbSubTab]   = useState('worst');
   const [belSubTab, setBelSubTab]   = useState('worst');
 
-  // Popover
+  // Popover — магазин
   const [tooltip, setTooltip] = useState(null);
   const tooltipTimerRef = useRef(null);
 
@@ -761,7 +919,25 @@ export default function ItogiPage() {
     }, 120);
   }
 
-  useEffect(() => () => clearTimeout(tooltipTimerRef.current), []);
+  // Popover — подразделение
+  const [subdivTooltip, setSubdivTooltip] = useState(null);
+  const subdivTimerRef = useRef(null);
+
+  function handleSubdivHover(subdiv, rect) {
+    clearTimeout(subdivTimerRef.current);
+    if (!subdiv) {
+      subdivTimerRef.current = setTimeout(() => setSubdivTooltip(null), 80);
+      return;
+    }
+    subdivTimerRef.current = setTimeout(() => {
+      setSubdivTooltip({ subdiv, x: rect.right + 8, y: rect.top });
+    }, 120);
+  }
+
+  useEffect(() => () => {
+    clearTimeout(tooltipTimerRef.current);
+    clearTimeout(subdivTimerRef.current);
+  }, []);
 
   const storeList = useMemo(() => buildStoreScores({
     spbSalesMonth, belSalesMonth,
@@ -902,6 +1078,7 @@ export default function ItogiPage() {
                   <SubdivList
                     items={regSubdivSplit.worst.slice(0, 5)} worst scoreKey="avgRegScore"
                     onExport={() => exportSubdivs(regSubdivSplit.worst.slice(0, 5), 'Итоги_подразделения_регламенты_худшие')}
+                    onHover={handleSubdivHover}
                   />
                 </div>
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
@@ -911,6 +1088,7 @@ export default function ItogiPage() {
                   <SubdivList
                     items={regSubdivSplit.best.slice(0, 4)} scoreKey="avgRegScore"
                     onExport={() => exportSubdivs(regSubdivSplit.best.slice(0, 4), 'Итоги_подразделения_регламенты_лучшие')}
+                    onHover={handleSubdivHover}
                   />
                 </div>
               </div>
@@ -924,6 +1102,7 @@ export default function ItogiPage() {
                   <SubdivList
                     items={salSubdivSplit.worst.slice(0, 5)} worst scoreKey="avgSalesScore"
                     onExport={() => exportSubdivs(salSubdivSplit.worst.slice(0, 5), 'Итоги_подразделения_продажи_худшие')}
+                    onHover={handleSubdivHover}
                   />
                 </div>
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
@@ -933,6 +1112,7 @@ export default function ItogiPage() {
                   <SubdivList
                     items={salSubdivSplit.best.slice(0, 4)} scoreKey="avgSalesScore"
                     onExport={() => exportSubdivs(salSubdivSplit.best.slice(0, 4), 'Итоги_подразделения_продажи_лучшие')}
+                    onHover={handleSubdivHover}
                   />
                 </div>
               </div>
@@ -1035,6 +1215,11 @@ export default function ItogiPage() {
       {/* Store popover */}
       {tooltip && (
         <StorePopover store={tooltip.store} x={tooltip.x} y={tooltip.y} />
+      )}
+
+      {/* Subdiv popover */}
+      {subdivTooltip && (
+        <SubdivPopover subdiv={subdivTooltip.subdiv} storeList={storeList} x={subdivTooltip.x} y={subdivTooltip.y} />
       )}
     </div>
   );
