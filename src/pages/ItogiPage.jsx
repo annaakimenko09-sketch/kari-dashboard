@@ -32,14 +32,15 @@ function storeLabel(row) {
   return String(row['Магазин'] || row.store || row['ТЦ'] || row.tc || '').trim();
 }
 
-// ─── Sales scoring ───────────────────────────────────────────────────────────
-// Key sales columns (0-based): Plan%, TO_LFL, КОП, Margin%, Traffic_LFL
+// ─── Sales scoring ────────────────────────────────────────────────────────────
+// Показатели: План %, ТО LFL (ci=9), КОП (ci=22), ЮИ % (ci=54), Штук в чеке (ci=33)
+// Убраны: маржа LFL (ci=14), трафик LFL (ci=19)
 const SALES_SCORE_COLS = [
-  { ci: 7, label: 'План %', dir: 1 },
-  { ci: 9, label: 'ТО LFL', dir: 1 },
-  { ci: 14, label: 'Маржа LFL', dir: 1 },
-  { ci: 19, label: 'Трафик LFL', dir: 1 },
-  { ci: 22, label: 'КОП', dir: 1 },
+  { ci: 7,  label: 'План %',        dir: 1 },
+  { ci: 9,  label: 'ТО LFL',        dir: 1 },
+  { ci: 22, label: 'КОП',           dir: 1 },
+  { ci: 54, label: 'ЮИ %',          dir: 1 },
+  { ci: 33, label: 'Штук в чеке',   dir: 1 },
 ];
 
 function salesScore(storeRow) {
@@ -67,44 +68,52 @@ function normalizeScores(items) {
 function extractSalesStores(salesFile) {
   if (!salesFile) return [];
   return (salesFile.data || salesFile.stores || []).filter(r => {
-    // Exclude summary rows — D col (_c3) should be a store name, not КОМПАНИЯ/РЕГИОН
     const d = String(r['_c3'] || r['Магазин'] || '').toUpperCase();
     return d && d !== 'КОМПАНИЯ' && d !== 'РЕГИОН' && d !== 'ИМ' && d !== '';
   });
 }
 
 // ─── Регламенты: score per store ─────────────────────────────────────────────
+
 // Вывозы: 'Отгружено товара %' — higher better; 'Вычерк по сборке %' — lower better
 function vyvozScore(row) {
   const shipped = pct(row['Отгружено товара %']);
   const writeoff = pct(row['Вычерк по сборке %']);
   if (shipped === null) return null;
-  // penalize writeoff
-  const base = shipped;
   const pen = writeoff !== null ? writeoff : 0;
-  return base - pen * 0.5;
+  return shipped - pen * 0.5;
 }
 
-// Scanning: scanPct — higher better
+// Сканирование обуви: scanPct = % НЕ отсканированных → чем выше — хуже → инвертируем
+// scanPct=100 означает ничего не сканировали → балл=0
+// scanPct=0 означает всё отсканировано → балл=100
 function scanScore(row) {
-  return pct(row.scanPct);
+  const v = pct(row.scanPct);
+  return v !== null ? Math.max(0, 100 - v) : null;
 }
 
-// Capsule: col[9] = % Неотскан — lower better → invert to 100 - pct
+// Капсулы: % Неотсканировано — lower better → invert
 function capsuleScore(row) {
   const v = pct(row.notScannedPct ?? row['% Неотскан'] ?? row.pct);
-  return v !== null ? 100 - v : null;
+  return v !== null ? Math.max(0, 100 - v) : null;
+}
+
+// ЮИ: pct = % невыставленного → lower better → invert
+function yuiScore(row) {
+  const v = pct(row.pct);
+  return v !== null ? Math.max(0, 100 - v) : null;
 }
 
 // ─── Build unified store list with all scores ─────────────────────────────────
 function buildStoreScores({
-  summaryData,        // вывозы (обувь + кидс combined)
+  summaryData,
   spbSalesMonth, belSalesMonth,
   spbSalesDay, belSalesDay,
   spbScanning, belScanning,
   spbCapsule, belCapsule,
+  spbJewelryItogi, belJewelryItogi,
 }) {
-  const map = {}; // key: "region|store" → score object
+  const map = {};
 
   function key(region, store) {
     return `${region}|${store.toLowerCase()}`;
@@ -112,7 +121,11 @@ function buildStoreScores({
 
   function ensure(region, store, subdiv) {
     const k = key(region, store);
-    if (!map[k]) map[k] = { region, store, subdiv, _keys: [], vyvozScores: [], scanScores: [], capsuleScores: [], salesMonthScore: null, salesDayScore: null };
+    if (!map[k]) map[k] = {
+      region, store, subdiv,
+      vyvozScores: [], scanScores: [], capsuleScores: [], yuiScores: [],
+      salesMonthScore: null, salesDayScore: null,
+    };
     return map[k];
   }
 
@@ -127,7 +140,7 @@ function buildStoreScores({
     if (s !== null) ensure(region, store, subdiv).vyvozScores.push(s);
   }
 
-  // ── Сканирование ──
+  // ── Сканирование обуви ──
   for (const sf of [spbScanning, belScanning]) {
     if (!sf) continue;
     const region = sf.fileRegion;
@@ -154,6 +167,21 @@ function buildStoreScores({
     }
   }
 
+  // ── ЮИ ──
+  for (const jf of [spbJewelryItogi, belJewelryItogi]) {
+    if (!jf) continue;
+    const region = jf.fileRegion === 'ALL' ? null : jf.fileRegion;
+    for (const row of (jf.stores || [])) {
+      const r = region || regionOf(row);
+      if (!r) continue;
+      const store = storeLabel(row);
+      if (!store) continue;
+      const subdiv = subdivOf(row);
+      const s = yuiScore(row);
+      if (s !== null) ensure(r, store, subdiv).yuiScores.push(s);
+    }
+  }
+
   // ── Продажи — месяц ──
   for (const sf of [spbSalesMonth, belSalesMonth]) {
     if (!sf) continue;
@@ -164,7 +192,7 @@ function buildStoreScores({
       store: String(r['_c3'] || r['Магазин'] || '').trim(),
       subdiv: String(r['_c1'] || r['Подразделение'] || '').trim(),
     })));
-    for (const { row, normScore, store, subdiv } of withScores) {
+    for (const { normScore, store, subdiv } of withScores) {
       if (!store || normScore === null) continue;
       const obj = ensure(region, store, subdiv);
       obj.salesMonthScore = normScore;
@@ -190,53 +218,82 @@ function buildStoreScores({
     }
   }
 
-  // ── Compute composite scores ──
+  // ── Composite ──
   return Object.values(map).map(obj => {
-    const vyvozAvg = obj.vyvozScores.length ? avg(...obj.vyvozScores) : null;
-    const scanAvg  = obj.scanScores.length  ? avg(...obj.scanScores)  : null;
-    const capsAvg  = obj.capsuleScores.length ? avg(...obj.capsuleScores) : null;
-    const regScore = avg(...[vyvozAvg, scanAvg, capsAvg].filter(v => v !== null));
+    const vyvozAvg   = obj.vyvozScores.length   ? avg(...obj.vyvozScores)   : null;
+    const scanAvg    = obj.scanScores.length     ? avg(...obj.scanScores)    : null;
+    const capsAvg    = obj.capsuleScores.length  ? avg(...obj.capsuleScores) : null;
+    const yuiAvg     = obj.yuiScores.length      ? avg(...obj.yuiScores)     : null;
+    const regScore   = avg(...[vyvozAvg, scanAvg, capsAvg, yuiAvg].filter(v => v !== null));
     const salesScore = avg(...[obj.salesMonthScore, obj.salesDayScore].filter(v => v !== null));
-    return {
-      ...obj,
-      vyvozAvg, scanAvg, capsAvg,
-      regScore, salesScore,
-    };
+    return { ...obj, vyvozAvg, scanAvg, capsAvg, yuiAvg, regScore, salesScore };
   });
 }
 
-// ─── Subdiv problem score (for "проблемные подразделения") ───────────────────
+// ─── Subdiv problem score ─────────────────────────────────────────────────────
+// СПБ и БЕЛ объединяем в один список
 function buildSubdivScores(storeList) {
   const map = {};
   for (const s of storeList) {
-    const k = `${s.region}|${s.subdiv}`;
-    if (!map[k]) map[k] = { region: s.region, subdiv: s.subdiv, regScores: [], salesScores: [] };
+    // Ключ только по подразделению (без региона) — объединяем СПБ и БЕЛ вместе
+    const k = s.subdiv || '—';
+    if (!map[k]) map[k] = { subdiv: s.subdiv, regions: new Set(), regScores: [], salesScores: [] };
+    map[k].regions.add(s.region);
     if (s.regScore !== null) map[k].regScores.push(s.regScore);
     if (s.salesScore !== null) map[k].salesScores.push(s.salesScore);
   }
   return Object.values(map).map(d => ({
     ...d,
-    avgRegScore: d.regScores.length ? avg(...d.regScores) : null,
+    regionsLabel: [...d.regions].sort().join(', '),
+    avgRegScore:   d.regScores.length   ? avg(...d.regScores)   : null,
     avgSalesScore: d.salesScores.length ? avg(...d.salesScores) : null,
   }));
 }
 
-// ─── UI Components ────────────────────────────────────────────────────────────
-const MEDAL = ['🥇', '🥈', '🥉'];
+// ─── Insights ─────────────────────────────────────────────────────────────────
+function buildInsights(storeList, subdivScores) {
+  const insights = [];
 
-function getRank(i) {
-  if (i < 3) return MEDAL[i];
-  return `${i + 1}`;
+  for (const region of ['СПБ', 'БЕЛ']) {
+    const stores = storeList.filter(s => s.region === region && s.regScore !== null);
+    if (!stores.length) continue;
+    const avgReg = avg(...stores.map(s => s.regScore));
+    if (avgReg !== null) {
+      const bad = stores.filter(s => s.regScore < avgReg * 0.7).length;
+      if (bad > 0) insights.push({ type: 'warn', text: `${region}: ${bad} магазин(ов) значительно ниже среднего по регламентам (ср. балл ${avgReg.toFixed(0)})` });
+    }
+    // Низкое сканирование обуви (scanAvg < 40 после инверсии означает >60% не отсканировано)
+    const lowScan = stores.filter(s => s.scanAvg !== null && s.scanAvg < 40);
+    if (lowScan.length > 2) insights.push({ type: 'warn', text: `${region}: ${lowScan.length} магазин(ов) с долей неотсканированной обуви >60%` });
+    // Хорошие вывозы
+    const topVyvoz = stores.filter(s => s.vyvozAvg !== null && s.vyvozAvg > 90);
+    if (topVyvoz.length > 0) insights.push({ type: 'ok', text: `${region}: ${topVyvoz.length} магазин(ов) с показателем вывозов >90%` });
+  }
+
+  // Слабые подразделения
+  const worstSubdivs = subdivScores.filter(d => d.avgRegScore !== null && d.avgRegScore < 50)
+    .sort((a, b) => a.avgRegScore - b.avgRegScore).slice(0, 3);
+  for (const d of worstSubdivs) {
+    insights.push({ type: 'critical', text: `Подр. ${d.subdiv} (${d.regionsLabel}): ср. балл по регламентам ${d.avgRegScore.toFixed(0)} — требует внимания` });
+  }
+
+  return insights;
 }
 
-function ScoreBar({ value, max = 100, color }) {
-  const w = max ? Math.round((value / max) * 100) : 0;
+// ─── UI ───────────────────────────────────────────────────────────────────────
+const MEDAL = ['🥇', '🥈', '🥉'];
+function getRank(i) { return i < 3 ? MEDAL[i] : `${i + 1}`; }
+
+function ScoreBar({ value, color }) {
+  const w = Math.min(Math.max(value, 0), 100);
   return (
     <div className="flex items-center gap-2 min-w-0">
       <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(w, 100)}%`, backgroundColor: color }} />
+        <div className="h-full rounded-full transition-all" style={{ width: `${w}%`, backgroundColor: color }} />
       </div>
-      <span className="text-xs font-mono w-9 text-right" style={{ color: 'rgba(255,255,255,0.7)' }}>{value !== null ? value.toFixed(1) : '—'}</span>
+      <span className="text-xs font-mono w-9 text-right" style={{ color: 'rgba(255,255,255,0.7)' }}>
+        {value !== null ? value.toFixed(1) : '—'}
+      </span>
     </div>
   );
 }
@@ -278,13 +335,13 @@ function TopTable({ title, items, scoreKey, scoreName, icon: Icon, accentColor, 
               </span>
               <div className="flex-1 min-w-0">
                 <div className="text-sm text-white leading-tight truncate">{item.store}</div>
-                <div className="text-xs mt-0.5 flex items-center gap-1.5">
+                <div className="text-xs mt-0.5 flex items-center gap-1.5 flex-wrap">
                   <TagBadge label={item.region} color={item.region === 'СПБ' ? '#E91E8C' : '#8b5cf6'} />
                   {item.subdiv && <span style={{ color: 'rgba(255,255,255,0.35)' }}>{item.subdiv}</span>}
                 </div>
               </div>
               <div className="w-28 flex-shrink-0">
-                <ScoreBar value={val} color={worst ? '#f87171' : accentColor} max={val > 100 ? val : 100} />
+                <ScoreBar value={val ?? 0} color={worst ? '#f87171' : accentColor} />
               </div>
             </div>
           );
@@ -294,75 +351,31 @@ function TopTable({ title, items, scoreKey, scoreName, icon: Icon, accentColor, 
   );
 }
 
-function SubdivCard({ region, subdivs, worst = false }) {
-  const filtered = subdivs
-    .filter(d => d.region === region && d.avgRegScore !== null)
+// Подразделения — СПБ+БЕЛ вместе, sorted worst→best
+function SubdivTable({ subdivs, worst = false }) {
+  const sorted = subdivs
+    .filter(d => d.avgRegScore !== null)
     .sort((a, b) => worst ? a.avgRegScore - b.avgRegScore : b.avgRegScore - a.avgRegScore)
-    .slice(0, 7);
+    .slice(0, 9);
 
-  const color = region === 'СПБ' ? '#E91E8C' : '#8b5cf6';
-
-  if (!filtered.length) return <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Нет данных</p>;
+  if (!sorted.length) return <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Нет данных</p>;
 
   return (
     <div className="space-y-2">
-      {filtered.map((d, i) => (
+      {sorted.map((d, i) => (
         <div key={i} className="flex items-center gap-3">
           <span className="w-5 text-xs text-center flex-shrink-0" style={{ color: worst ? '#f87171' : '#facc15' }}>{i + 1}</span>
-          <span className="flex-1 text-sm text-white truncate">{d.subdiv || '—'}</span>
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            <span className="text-sm text-white truncate">{d.subdiv || '—'}</span>
+            <span className="text-xs flex-shrink-0" style={{ color: 'rgba(255,255,255,0.35)' }}>{d.regionsLabel}</span>
+          </div>
           <div className="w-32 flex-shrink-0">
-            <ScoreBar value={d.avgRegScore} color={worst ? '#f87171' : color} max={100} />
+            <ScoreBar value={d.avgRegScore} color={worst ? '#f87171' : '#10b981'} />
           </div>
         </div>
       ))}
     </div>
   );
-}
-
-// ─── Insights / conclusions ───────────────────────────────────────────────────
-function buildInsights(storeList, subdivScores) {
-  const insights = [];
-
-  // Find regions with bad reg scores
-  const spbStores = storeList.filter(s => s.region === 'СПБ' && s.regScore !== null);
-  const belStores = storeList.filter(s => s.region === 'БЕЛ' && s.regScore !== null);
-
-  for (const [region, stores] of [['СПБ', spbStores], ['БЕЛ', belStores]]) {
-    if (!stores.length) continue;
-    const avgReg = avg(...stores.map(s => s.regScore));
-    if (avgReg !== null) {
-      const bad = stores.filter(s => s.regScore < avgReg * 0.7).length;
-      if (bad > 0) {
-        insights.push({ type: 'warn', region, text: `${region}: ${bad} магазин(ов) значительно ниже среднего по регламентам (ср. балл ${avgReg.toFixed(0)})` });
-      }
-    }
-
-    // Low scan
-    const lowScan = stores.filter(s => s.scanAvg !== null && s.scanAvg < 60);
-    if (lowScan.length > 2) {
-      insights.push({ type: 'warn', region, text: `${region}: ${lowScan.length} магазин(ов) с адресным сканированием ниже 60%` });
-    }
-
-    // High vyvoz performers
-    const topVyvoz = stores.filter(s => s.vyvozAvg !== null && s.vyvozAvg > 90);
-    if (topVyvoz.length > 0) {
-      insights.push({ type: 'ok', region, text: `${region}: ${topVyvoz.length} магазин(ов) с показателем вывозов >90% — отличное исполнение` });
-    }
-  }
-
-  // Subdiv insights
-  const worstSubdivs = subdivScores
-    .filter(d => d.avgRegScore !== null)
-    .sort((a, b) => a.avgRegScore - b.avgRegScore)
-    .slice(0, 3);
-
-  for (const d of worstSubdivs) {
-    if (d.avgRegScore < 50) {
-      insights.push({ type: 'critical', region: d.region, text: `Подр. ${d.subdiv} (${d.region}): средний балл по регламентам ${d.avgRegScore.toFixed(0)} — требует внимания` });
-    }
-  }
-
-  return insights;
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -373,10 +386,10 @@ export default function ItogiPage() {
     spbSalesDay, belSalesDay,
     spbScanning, belScanning,
     spbCapsule, belCapsule,
+    spbJewelryItogi, belJewelryItogi,
   } = useData();
 
-  const [activeTab, setActiveTab] = useState('reglaments'); // 'reglaments' | 'sales'
-  const [regionFilter, setRegionFilter] = useState('ALL'); // 'ALL' | 'СПБ' | 'БЕЛ'
+  const [activeTab, setActiveTab] = useState('reglaments');
 
   const storeList = useMemo(() => buildStoreScores({
     summaryData,
@@ -384,54 +397,34 @@ export default function ItogiPage() {
     spbSalesDay, belSalesDay,
     spbScanning, belScanning,
     spbCapsule, belCapsule,
-  }), [summaryData, spbSalesMonth, belSalesMonth, spbSalesDay, belSalesDay, spbScanning, belScanning, spbCapsule, belCapsule]);
+    spbJewelryItogi, belJewelryItogi,
+  }), [summaryData, spbSalesMonth, belSalesMonth, spbSalesDay, belSalesDay,
+       spbScanning, belScanning, spbCapsule, belCapsule, spbJewelryItogi, belJewelryItogi]);
 
   const subdivScores = useMemo(() => buildSubdivScores(storeList), [storeList]);
-  const insights = useMemo(() => buildInsights(storeList, subdivScores), [storeList, subdivScores]);
+  const insights     = useMemo(() => buildInsights(storeList, subdivScores), [storeList, subdivScores]);
 
   const hasData = storeList.length > 0;
 
-  // ── Filtered by region ──
-  const filtered = regionFilter === 'ALL' ? storeList : storeList.filter(s => s.region === regionFilter);
+  const spbStores = storeList.filter(s => s.region === 'СПБ');
+  const belStores = storeList.filter(s => s.region === 'БЕЛ');
 
-  // ── Sales TOP/ANTI-TOP ──
-  const salesSorted = filtered.filter(s => s.salesScore !== null).sort((a, b) => b.salesScore - a.salesScore);
-  const salesTop = salesSorted.slice(0, 15);
-  const salesBottom = [...salesSorted].reverse().slice(0, 15);
+  // Combined (СПБ+БЕЛ) sorted lists
+  const regTop    = storeList.filter(s => s.regScore   !== null).sort((a,b) => b.regScore   - a.regScore).slice(0,15);
+  const regBottom = storeList.filter(s => s.regScore   !== null).sort((a,b) => a.regScore   - b.regScore).slice(0,15);
+  const salTop    = storeList.filter(s => s.salesScore !== null).sort((a,b) => b.salesScore - a.salesScore).slice(0,15);
+  const salBottom = storeList.filter(s => s.salesScore !== null).sort((a,b) => a.salesScore - b.salesScore).slice(0,15);
 
-  // ── Reglaments TOP/ANTI-TOP ──
-  const regSorted = filtered.filter(s => s.regScore !== null).sort((a, b) => b.regScore - a.regScore);
-  const regTop = regSorted.slice(0, 15);
-  const regBottom = [...regSorted].reverse().slice(0, 15);
-
-  // ── Subdiv problem analysis: СПБ and БЕЛ separately ──
-  const worstSubdivSpb = subdivScores.filter(d => d.region === 'СПБ' && d.avgRegScore !== null)
-    .sort((a, b) => a.avgRegScore - b.avgRegScore).slice(0, 7);
-  const worstSubdivBel = subdivScores.filter(d => d.region === 'БЕЛ' && d.avgRegScore !== null)
-    .sort((a, b) => a.avgRegScore - b.avgRegScore).slice(0, 7);
-
-  // ── For separate region tables ──
-  const spbFiltered = storeList.filter(s => s.region === 'СПБ');
-  const belFiltered = storeList.filter(s => s.region === 'БЕЛ');
-
-  function makeRegTop(list) {
-    return list.filter(s => s.regScore !== null).sort((a, b) => b.regScore - a.regScore).slice(0, 15);
-  }
-  function makeRegBottom(list) {
-    return list.filter(s => s.regScore !== null).sort((a, b) => a.regScore - b.regScore).slice(0, 15);
-  }
-  function makeSalesTop(list) {
-    return list.filter(s => s.salesScore !== null).sort((a, b) => b.salesScore - a.salesScore).slice(0, 15);
-  }
-  function makeSalesBottom(list) {
-    return list.filter(s => s.salesScore !== null).sort((a, b) => a.salesScore - b.salesScore).slice(0, 15);
-  }
+  function makeRegTop(list)    { return list.filter(s=>s.regScore!==null).sort((a,b)=>b.regScore-a.regScore).slice(0,15); }
+  function makeRegBottom(list) { return list.filter(s=>s.regScore!==null).sort((a,b)=>a.regScore-b.regScore).slice(0,15); }
+  function makeSalTop(list)    { return list.filter(s=>s.salesScore!==null).sort((a,b)=>b.salesScore-a.salesScore).slice(0,15); }
+  function makeSalBottom(list) { return list.filter(s=>s.salesScore!==null).sort((a,b)=>a.salesScore-b.salesScore).slice(0,15); }
 
   return (
     <div className="flex-1 overflow-auto" style={{ backgroundColor: '#111827', minHeight: '100vh' }}>
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-8">
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-white">Итоги</h1>
           <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.45)' }}>
@@ -444,14 +437,14 @@ export default function ItogiPage() {
             <BarChart2 size={32} className="mx-auto mb-3" style={{ color: 'rgba(255,255,255,0.2)' }} />
             <p className="text-white font-medium">Данные не загружены</p>
             <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>
-              Загрузите файлы продаж, вывозов, сканирования и капсул через раздел «Загрузить данные»
+              Загрузите файлы продаж, вывозов, сканирования, ЮИ и капсул через «Загрузить данные»
             </p>
           </div>
         )}
 
         {hasData && (
           <>
-            {/* ── Insights ── */}
+            {/* Выводы */}
             {insights.length > 0 && (
               <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
                 <h2 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
@@ -472,44 +465,38 @@ export default function ItogiPage() {
               </div>
             )}
 
-            {/* ── Проблемные подразделения ── */}
+            {/* Проблемные подразделения — СПБ и БЕЛ вместе */}
             <div>
-              <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
+              <h2 className="text-base font-semibold text-white mb-1 flex items-center gap-2">
                 <AlertTriangle size={15} style={{ color: '#f59e0b' }} />
                 Проблемные подразделения
-                <span className="text-xs font-normal ml-1" style={{ color: 'rgba(255,255,255,0.35)' }}>по среднему баллу регламентов</span>
+                <span className="text-xs font-normal ml-1" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  СПБ + БЕЛ, по ср. баллу регламентов (вывозы + сканирование обуви + капсулы + ЮИ)
+                </span>
               </h2>
+              <p className="text-xs mb-4" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                Баллы: 0 = хуже, 100 = лучше. Сканирование: 100% неотсканированных → 0 баллов. ЮИ: 100% невыставленных → 0 баллов.
+              </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* СПБ */}
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <div className="flex items-center gap-2 mb-4">
-                    <TagBadge label="СПБ" color="#E91E8C" />
-                    <span className="text-sm font-medium text-white">Слабые подразделения</span>
-                  </div>
-                  <SubdivCard region="СПБ" subdivs={subdivScores} worst />
-                  {worstSubdivSpb.length === 0 && <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Нет данных</p>}
+                  <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'rgba(255,255,255,0.35)' }}>Слабые подразделения</p>
+                  <SubdivTable subdivs={subdivScores} worst />
                 </div>
-                {/* БЕЛ */}
                 <div className="rounded-xl p-5" style={{ backgroundColor: '#1f2937' }}>
-                  <div className="flex items-center gap-2 mb-4">
-                    <TagBadge label="БЕЛ" color="#8b5cf6" />
-                    <span className="text-sm font-medium text-white">Слабые подразделения</span>
-                  </div>
-                  <SubdivCard region="БЕЛ" subdivs={subdivScores} worst />
-                  {worstSubdivBel.length === 0 && <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Нет данных</p>}
+                  <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'rgba(255,255,255,0.35)' }}>Сильные подразделения</p>
+                  <SubdivTable subdivs={subdivScores} worst={false} />
                 </div>
               </div>
             </div>
 
-            {/* ── Tabs: Продажи / Регламенты ── */}
+            {/* ТОП магазинов — СПБ+БЕЛ вместе */}
             <div>
               <div className="flex items-center gap-2 mb-4 flex-wrap">
-                <h2 className="text-base font-semibold text-white mr-2">ТОП магазинов</h2>
-                {/* Tab switcher */}
+                <h2 className="text-base font-semibold text-white mr-2">ТОП магазинов (СПБ + БЕЛ)</h2>
                 <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'rgba(255,255,255,0.12)' }}>
                   {[
                     { key: 'reglaments', label: 'Регламенты', icon: ClipboardCheck },
-                    { key: 'sales', label: 'Продажи', icon: BarChart2 },
+                    { key: 'sales',      label: 'Продажи',    icon: BarChart2 },
                   ].map(({ key, label, icon: Icon }) => (
                     <button
                       key={key}
@@ -525,127 +512,51 @@ export default function ItogiPage() {
                     </button>
                   ))}
                 </div>
-                {/* Region filter */}
-                <div className="flex rounded-lg overflow-hidden border ml-2" style={{ borderColor: 'rgba(255,255,255,0.12)' }}>
-                  {['ALL', 'СПБ', 'БЕЛ'].map(r => (
-                    <button
-                      key={r}
-                      onClick={() => setRegionFilter(r)}
-                      className="px-3 py-1.5 text-xs font-medium transition-colors"
-                      style={{
-                        backgroundColor: regionFilter === r ? (r === 'БЕЛ' ? '#8b5cf6' : r === 'СПБ' ? ACCENT : '#374151') : 'transparent',
-                        color: regionFilter === r ? 'white' : 'rgba(255,255,255,0.5)',
-                      }}
-                    >
-                      {r === 'ALL' ? 'Все' : r}
-                    </button>
-                  ))}
-                </div>
               </div>
 
-              {/* Combined TOP-15 + ANTI-TOP-15 */}
               {activeTab === 'reglaments' && (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  <TopTable
-                    title="ТОП-15 исполнительных (регламенты)"
-                    items={regTop}
-                    scoreKey="regScore"
-                    scoreName="балл"
-                    icon={Award}
-                    accentColor="#10b981"
-                    worst={false}
-                  />
-                  <TopTable
-                    title="ТОП-15 проблемных (регламенты)"
-                    items={regBottom}
-                    scoreKey="regScore"
-                    scoreName="балл"
-                    icon={AlertTriangle}
-                    accentColor="#ef4444"
-                    worst={true}
-                  />
+                  <TopTable title="ТОП-15 исполнительных" items={regTop}    scoreKey="regScore"   scoreName="балл"   icon={Award}         accentColor="#10b981" />
+                  <TopTable title="ТОП-15 проблемных"      items={regBottom} scoreKey="regScore"   scoreName="балл"   icon={AlertTriangle}  accentColor="#ef4444" worst />
                 </div>
               )}
-
               {activeTab === 'sales' && (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  <TopTable
-                    title="ТОП-15 по продажам"
-                    items={salesTop}
-                    scoreKey="salesScore"
-                    scoreName="индекс"
-                    icon={TrendingUp}
-                    accentColor="#10b981"
-                    worst={false}
-                  />
-                  <TopTable
-                    title="ТОП-15 отстающих по продажам"
-                    items={salesBottom}
-                    scoreKey="salesScore"
-                    scoreName="индекс"
-                    icon={TrendingDown}
-                    accentColor="#ef4444"
-                    worst={true}
-                  />
+                  <TopTable title="ТОП-15 лучших по продажам"     items={salTop}    scoreKey="salesScore" scoreName="индекс" icon={TrendingUp}     accentColor="#10b981" />
+                  <TopTable title="ТОП-15 отстающих по продажам"  items={salBottom} scoreKey="salesScore" scoreName="индекс" icon={TrendingDown}   accentColor="#ef4444" worst />
                 </div>
               )}
             </div>
 
-            {/* ── Отдельно СПБ / БЕЛ ── */}
-            <div className="space-y-8">
-              {/* СПБ */}
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <TagBadge label="СПБ" color="#E91E8C" />
-                  <h2 className="text-base font-semibold text-white">Детализация по СПБ</h2>
-                </div>
-
-                <div className="space-y-6">
-                  {/* Продажи СПБ */}
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Продажи</p>
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      <TopTable title="ТОП-15 по продажам (СПБ)" items={makeSalesTop(spbFiltered)} scoreKey="salesScore" scoreName="индекс" icon={TrendingUp} accentColor="#10b981" />
-                      <TopTable title="Отстающие по продажам (СПБ)" items={makeSalesBottom(spbFiltered)} scoreKey="salesScore" scoreName="индекс" icon={TrendingDown} accentColor="#ef4444" worst />
-                    </div>
+            {/* Детализация по магазинам — СПБ отдельно, БЕЛ отдельно */}
+            <div className="space-y-10">
+              {[
+                { region: 'СПБ', color: '#E91E8C', stores: spbStores },
+                { region: 'БЕЛ', color: '#8b5cf6', stores: belStores },
+              ].map(({ region, color, stores }) => (
+                <div key={region}>
+                  <div className="flex items-center gap-2 mb-5">
+                    <TagBadge label={region} color={color} />
+                    <h2 className="text-base font-semibold text-white">Магазины — {region}</h2>
                   </div>
-                  {/* Регламенты СПБ */}
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Регламенты</p>
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      <TopTable title="ТОП-15 по регламентам (СПБ)" items={makeRegTop(spbFiltered)} scoreKey="regScore" scoreName="балл" icon={Award} accentColor="#10b981" />
-                      <TopTable title="Проблемные по регламентам (СПБ)" items={makeRegBottom(spbFiltered)} scoreKey="regScore" scoreName="балл" icon={AlertTriangle} accentColor="#ef4444" worst />
+                  <div className="space-y-5">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Продажи</p>
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <TopTable title={`ТОП-15 по продажам (${region})`}        items={makeSalTop(stores)}    scoreKey="salesScore" scoreName="индекс" icon={TrendingUp}    accentColor="#10b981" />
+                        <TopTable title={`Отстающие по продажам (${region})`}     items={makeSalBottom(stores)} scoreKey="salesScore" scoreName="индекс" icon={TrendingDown}  accentColor="#ef4444" worst />
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* БЕЛ */}
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <TagBadge label="БЕЛ" color="#8b5cf6" />
-                  <h2 className="text-base font-semibold text-white">Детализация по БЕЛ</h2>
-                </div>
-
-                <div className="space-y-6">
-                  {/* Продажи БЕЛ */}
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Продажи</p>
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      <TopTable title="ТОП-15 по продажам (БЕЛ)" items={makeSalesTop(belFiltered)} scoreKey="salesScore" scoreName="индекс" icon={TrendingUp} accentColor="#10b981" />
-                      <TopTable title="Отстающие по продажам (БЕЛ)" items={makeSalesBottom(belFiltered)} scoreKey="salesScore" scoreName="индекс" icon={TrendingDown} accentColor="#ef4444" worst />
-                    </div>
-                  </div>
-                  {/* Регламенты БЕЛ */}
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Регламенты</p>
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      <TopTable title="ТОП-15 по регламентам (БЕЛ)" items={makeRegTop(belFiltered)} scoreKey="regScore" scoreName="балл" icon={Award} accentColor="#10b981" />
-                      <TopTable title="Проблемные по регламентам (БЕЛ)" items={makeRegBottom(belFiltered)} scoreKey="regScore" scoreName="балл" icon={AlertTriangle} accentColor="#ef4444" worst />
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>Регламенты</p>
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <TopTable title={`ТОП-15 по регламентам (${region})`}     items={makeRegTop(stores)}    scoreKey="regScore"   scoreName="балл"   icon={Award}          accentColor="#10b981" />
+                        <TopTable title={`Проблемные по регламентам (${region})`} items={makeRegBottom(stores)} scoreKey="regScore"   scoreName="балл"   icon={AlertTriangle}  accentColor="#ef4444" worst />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              ))}
             </div>
           </>
         )}
