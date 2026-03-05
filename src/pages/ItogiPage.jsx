@@ -206,7 +206,7 @@ const SALES_SCORE_COLS = [
   { ci: 7,  label: 'План %',        dir: 1, isPct: true  },
   { ci: 9,  label: 'ТО LFL',        dir: 1, isPct: true  },
   { ci: 22, label: 'КОП',           dir: 1, isPct: true  },
-  { ci: 54, label: 'ЮИ %',          dir: 1, isPct: true  },
+  { ci: 55, label: 'ЮИ %',          dir: 1, isPct: true  },
   { ci: 33, label: 'Штук в чеке',   dir: 1, isPct: false },
 ];
 
@@ -412,26 +412,30 @@ function buildStoreScores({
     }
   }
 
-  // Продажи — только месяц
+  // Продажи — только месяц; нормализуем все магазины СПБ+БЕЛ вместе
+  const allSalesStoreRows = [];
   for (const sf of [spbSalesMonth, belSalesMonth]) {
     if (!sf) continue;
     const region = sf.fileRegion;
-    const stores = extractSalesStores(sf).filter(r => !isClosed(r));
-    const withScores = normalizeScores(stores.map(r => ({
-      score: salesScore(r),
-      store: String(r['_c3'] || r['Магазин'] || '').trim(),
-      subdiv: String(r['_c1'] || r['Подразделение'] || '').trim(),
-      tc: String(r['_c4'] || r['ТЦ'] || '').trim() || null,
-      rawRow: r,
-    })));
-    for (const { normScore, store, subdiv, tc, rawRow } of withScores) {
-      if (!store || normScore === null) continue;
-      const obj = ensure(region, store, subdiv, tc);
-      obj.salesMonthScore = normScore;
-      obj.salesRaw = extractSalesRaw(rawRow);
-      if (!obj.subdiv && subdiv) obj.subdiv = subdiv;
-      if (!obj.tc && tc) obj.tc = tc;
+    for (const r of extractSalesStores(sf).filter(r => !isClosed(r))) {
+      allSalesStoreRows.push({
+        score: salesScore(r),
+        store: String(r['_c3'] || r['Магазин'] || '').trim(),
+        subdiv: String(r['_c1'] || r['Подразделение'] || '').trim(),
+        tc: String(r['_c4'] || r['ТЦ'] || '').trim() || null,
+        rawRow: r,
+        region,
+      });
     }
+  }
+  const withScores = normalizeScores(allSalesStoreRows);
+  for (const { normScore, store, subdiv, tc, rawRow, region } of withScores) {
+    if (!store || normScore === null) continue;
+    const obj = ensure(region, store, subdiv, tc);
+    obj.salesMonthScore = normScore;
+    obj.salesRaw = extractSalesRaw(rawRow);
+    if (!obj.subdiv && subdiv) obj.subdiv = subdiv;
+    if (!obj.tc && tc) obj.tc = tc;
   }
 
   return Object.values(map).map(obj => {
@@ -458,28 +462,25 @@ function buildStoreScores({
 }
 
 // Build subdivision scores using:
-// - Regulation scores: averaged from individual store regulation scores
+// - Regulation scores: from subdivision-level data in each source file (same source as each report tab)
 // - Sales scores: from sf.subdivs rows in МЕСЯЦ file (preferred) OR averaged from store scores (fallback)
-function buildSubdivScores(storeList, spbSalesMonth, belSalesMonth) {
-  // Step 1: aggregates from store list — reg scores + raw reg values + fallback sales scores
+function buildSubdivScores(storeList, spbSalesMonth, belSalesMonth, {
+  spbScanning, belScanning,
+  spbJewelryItogi, belJewelryItogi,
+  spbCapsule, belCapsule,
+  spbIZ, belIZ,
+  spbPricing, belPricing,
+} = {}) {
+  // Step 1: collect regions + fallback sales per subdiv from store list
   const regMap = {};
   for (const s of storeList) {
     const k = s.subdiv || '—';
     if (!regMap[k]) regMap[k] = {
       subdiv: s.subdiv, regions: new Set(),
-      regScores: [], salesScores: [],
-      scanRaws: [], yuiRaws: [], capsRaws: [], izRaws: [], pricingRaws: [],
-      salesRawsByLabel: {},
+      salesScores: [], salesRawsByLabel: {},
     };
     regMap[k].regions.add(s.region);
-    if (s.regScore   !== null) regMap[k].regScores.push(s.regScore);
     if (s.salesScore !== null) regMap[k].salesScores.push(s.salesScore);
-    if (s.scanRaw    !== null) regMap[k].scanRaws.push(s.scanRaw);
-    if (s.yuiRaw     !== null) regMap[k].yuiRaws.push(s.yuiRaw);
-    if (s.capsRaw    !== null) regMap[k].capsRaws.push(s.capsRaw);
-    if (s.izRaw      !== null) regMap[k].izRaws.push(s.izRaw);
-    if (s.pricingRaw !== null) regMap[k].pricingRaws.push(s.pricingRaw);
-    // Collect raw sales per label for fallback
     if (s.salesRaw) {
       for (const { label, raw } of s.salesRaw) {
         if (raw !== null) {
@@ -490,8 +491,99 @@ function buildSubdivScores(storeList, spbSalesMonth, belSalesMonth) {
     }
   }
 
-  // Step 2: collect raw sales KPIs from sf.subdivs in МЕСЯЦ files (preferred source)
-  const salesMap = {}; // subdiv name → { salesScores, salesRaws, regions }
+  // Step 2: collect regulation data directly from each file's subdivision arrays
+  // (same data source used by each report tab)
+
+  // Scan: scanning file subdivisions → row.scanPct = % неотсканированных
+  const scanSubdivMap = {};
+  for (const sf of [spbScanning, belScanning]) {
+    if (!sf) continue;
+    const region = sf.fileRegion === 'ALL' ? null : sf.fileRegion;
+    for (const row of (sf.subdivisions || [])) {
+      const k = String(row.subdiv || '').trim();
+      if (!k) continue;
+      const r = region || regionOf(row);
+      const raw = pct(row.scanPct);
+      if (raw === null) continue;
+      if (!scanSubdivMap[k]) scanSubdivMap[k] = { raws: [], regions: new Set() };
+      scanSubdivMap[k].raws.push(raw);
+      if (r) scanSubdivMap[k].regions.add(r);
+    }
+  }
+
+  // YUI: jewelry file subdivisions → row.pct = % невыставленного
+  const yuiSubdivMap = {};
+  for (const jf of [spbJewelryItogi, belJewelryItogi]) {
+    if (!jf) continue;
+    const region = jf.fileRegion === 'ALL' ? null : jf.fileRegion;
+    for (const row of (jf.subdivisions || [])) {
+      const k = String(row.subdiv || '').trim();
+      if (!k) continue;
+      const r = region || regionOf(row);
+      const raw = pct(row.pct);
+      if (raw === null) continue;
+      if (!yuiSubdivMap[k]) yuiSubdivMap[k] = { raws: [], regions: new Set() };
+      yuiSubdivMap[k].raws.push(raw);
+      if (r) yuiSubdivMap[k].regions.add(r);
+    }
+  }
+
+  // Capsule: capsule file subdivisions → row.pct = % неотсканировано
+  const capsSubdivMap = {};
+  for (const cf of [spbCapsule, belCapsule]) {
+    if (!cf) continue;
+    const region = cf.fileRegion === 'ALL' ? null : cf.fileRegion;
+    for (const row of (cf.subdivisions || [])) {
+      const k = String(row.subdiv || '').trim();
+      if (!k) continue;
+      const r = region || regionOf(row);
+      const raw = pct(row.pct);
+      if (raw === null) continue;
+      if (!capsSubdivMap[k]) capsSubdivMap[k] = { raws: [], regions: new Set() };
+      capsSubdivMap[k].raws.push(raw);
+      if (r) capsSubdivMap[k].regions.add(r);
+    }
+  }
+
+  // IZ: IZ file Месяц sheet subdivs → row.scanShare = % сканирования
+  const izSubdivMap = {};
+  for (const iz of [spbIZ, belIZ]) {
+    if (!iz) continue;
+    const region = iz.fileRegion === 'ALL' ? null : iz.fileRegion;
+    const sheet = iz.sheets?.['Месяц'] || iz.sheets?.['Неделя'] || iz.sheets?.['День'] || null;
+    for (const row of (sheet?.subdivs || [])) {
+      const k = String(row.subdiv || '').trim();
+      if (!k) continue;
+      const r = region || regionOf(row);
+      const raw = pct(row.scanShare);
+      if (raw === null) continue;
+      if (!izSubdivMap[k]) izSubdivMap[k] = { raws: [], regions: new Set() };
+      izSubdivMap[k].raws.push(raw);
+      if (r) izSubdivMap[k].regions.add(r);
+    }
+  }
+
+  // Pricing: pricing file subdivisions → pricingScore formula → raw = avg % проблем
+  const pricingSubdivMap = {};
+  for (const pf of [spbPricing, belPricing]) {
+    if (!pf) continue;
+    const region = pf.fileRegion === 'ALL' ? null : pf.fileRegion;
+    for (const row of (pf.subdivisions || [])) {
+      const k = String(row.subdiv || '').trim();
+      if (!k) continue;
+      const r = region || regionOf(row);
+      const { raw } = pricingScore(row);
+      if (raw === null) continue;
+      if (!pricingSubdivMap[k]) pricingSubdivMap[k] = { raws: [], regions: new Set() };
+      pricingSubdivMap[k].raws.push(raw);
+      if (r) pricingSubdivMap[k].regions.add(r);
+    }
+  }
+
+  // Step 3: collect raw sales KPIs from sf.subdivs in МЕСЯЦ files (preferred source)
+  // Collect all subdivisions from both files first, then normalize together
+  const salesMap = {};
+  const allSubdivRows = [];
 
   for (const sf of [spbSalesMonth, belSalesMonth]) {
     if (!sf || !(sf.subdivs?.length)) continue;
@@ -500,57 +592,79 @@ function buildSubdivScores(storeList, spbSalesMonth, belSalesMonth) {
       const code = extractStoreCode(String(r['_c3'] || r['Магазин'] || ''));
       return !(code !== null && CLOSED_STORES.has(code));
     });
-
-    const withRaw = subdivRows.map(r => ({
-      subdiv: String(r['_c1'] || r['Подразделение'] || '').trim(),
-      score: salesScore(r),
-      rawRow: r,
-      region,
-    })).filter(x => x.subdiv);
-
-    const normalized = normalizeScores(withRaw);
-    for (const { subdiv, normScore, rawRow, region: reg } of normalized) {
+    for (const r of subdivRows) {
+      const subdiv = String(r['_c1'] || r['Подразделение'] || '').trim();
       if (!subdiv) continue;
-      if (!salesMap[subdiv]) salesMap[subdiv] = { regions: new Set(), salesScores: [], salesRaws: [] };
-      salesMap[subdiv].regions.add(reg);
-      if (normScore !== null) salesMap[subdiv].salesScores.push(normScore);
-      salesMap[subdiv].salesRaws.push(extractSalesRaw(rawRow));
+      allSubdivRows.push({ subdiv, score: salesScore(r), rawRow: r, region });
     }
+  }
+
+  // Normalize all subdivisions together (SPB + BEL combined)
+  const normalized = normalizeScores(allSubdivRows);
+  for (const { subdiv, normScore, rawRow, region: reg } of normalized) {
+    if (!subdiv) continue;
+    if (!salesMap[subdiv]) salesMap[subdiv] = { regions: new Set(), salesScores: [], salesRaws: [] };
+    salesMap[subdiv].regions.add(reg);
+    if (normScore !== null) salesMap[subdiv].salesScores.push(normScore);
+    salesMap[subdiv].salesRaws.push(extractSalesRaw(rawRow));
   }
 
   const useSalesMapForScores = Object.keys(salesMap).length > 0;
 
-  // Step 3: merge into final subdiv list
-  const allKeys = new Set([...Object.keys(regMap), ...Object.keys(salesMap)]);
+  // Step 4: merge into final subdiv list
+  const allKeys = new Set([
+    ...Object.keys(regMap),
+    ...Object.keys(salesMap),
+    ...Object.keys(scanSubdivMap),
+    ...Object.keys(yuiSubdivMap),
+    ...Object.keys(capsSubdivMap),
+    ...Object.keys(izSubdivMap),
+    ...Object.keys(pricingSubdivMap),
+  ]);
+
   return Array.from(allKeys).map(k => {
     const reg = regMap[k];
     const sal = salesMap[k];
-    const regions = new Set([...(reg?.regions || []), ...(sal?.regions || [])]);
-    const avgRegScore = reg?.regScores.length ? avg(...reg.regScores) : null;
+    const regions = new Set([
+      ...(reg?.regions || []),
+      ...(sal?.regions || []),
+      ...(scanSubdivMap[k]?.regions || []),
+      ...(yuiSubdivMap[k]?.regions || []),
+      ...(capsSubdivMap[k]?.regions || []),
+      ...(izSubdivMap[k]?.regions || []),
+      ...(pricingSubdivMap[k]?.regions || []),
+    ]);
+
+    // Regulation raw values from file subdivision arrays (matches each report tab's source)
+    const avgScanRaw    = scanSubdivMap[k]?.raws.length    ? avg(...scanSubdivMap[k].raws)    : null;
+    const avgYuiRaw     = yuiSubdivMap[k]?.raws.length     ? avg(...yuiSubdivMap[k].raws)     : null;
+    const avgCapsRaw    = capsSubdivMap[k]?.raws.length    ? avg(...capsSubdivMap[k].raws)    : null;
+    const avgIzRaw      = izSubdivMap[k]?.raws.length      ? avg(...izSubdivMap[k].raws)      : null;
+    const avgPricingRaw = pricingSubdivMap[k]?.raws.length ? avg(...pricingSubdivMap[k].raws) : null;
+
+    // Regulation scores derived from raw values (same formulas as store-level)
+    const scanScore_    = avgScanRaw    !== null ? Math.max(0, 100 - avgScanRaw)    : null;
+    const yuiScore_     = avgYuiRaw     !== null ? Math.max(0, 100 - avgYuiRaw)     : null;
+    const capsScore_    = avgCapsRaw    !== null ? Math.max(0, 100 - avgCapsRaw)    : null;
+    const izScore_      = avgIzRaw      !== null ? avgIzRaw                          : null;
+    const pricingScore_ = avgPricingRaw !== null ? Math.max(0, 100 - avgPricingRaw) : null;
+
+    const metricScores = [scanScore_, yuiScore_, capsScore_, izScore_, pricingScore_].filter(v => v !== null);
+    const avgRegScore = metricScores.length ? avg(...metricScores) : null;
 
     // Sales score: prefer file subdivs; fall back to store averages
     const avgSalesScore = useSalesMapForScores
       ? (sal?.salesScores.length ? avg(...sal.salesScores) : null)
       : (reg?.salesScores.length ? avg(...reg.salesScores) : null);
 
-    // Average raw regulation values
-    const avgScanRaw    = reg?.scanRaws.length    ? avg(...reg.scanRaws)    : null;
-    const avgYuiRaw     = reg?.yuiRaws.length     ? avg(...reg.yuiRaws)     : null;
-    const avgCapsRaw    = reg?.capsRaws.length    ? avg(...reg.capsRaws)    : null;
-    const avgIzRaw      = reg?.izRaws.length      ? avg(...reg.izRaws)      : null;
-    const avgPricingRaw = reg?.pricingRaws.length ? avg(...reg.pricingRaws) : null;
-
-    // Average raw sales values per KPI:
-    // prefer from file subdivs rows; fall back to averaging store sales raws
+    // Sales raw KPIs: prefer from file subdivs rows; fall back to store averages
     const salesAvgRaw = SALES_SCORE_COLS.map(({ label, isPct }) => {
       if (sal?.salesRaws.length) {
-        // From file subdivs
         const vals = sal.salesRaws
           .map(raws => raws.find(e => e.label === label)?.raw ?? null)
           .filter(v => v !== null);
         return { label, raw: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null, isPct };
       }
-      // Fallback: average from individual store sales raws
       const vals = reg?.salesRawsByLabel[label] || [];
       return { label, raw: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null, isPct };
     });
@@ -1093,7 +1207,15 @@ export default function ItogiPage() {
        spbScanning, belScanning, spbCapsule, belCapsule,
        spbJewelryItogi, belJewelryItogi, spbIZ, belIZ, spbPricing, belPricing]);
 
-  const subdivScores = useMemo(() => buildSubdivScores(storeList, spbSalesMonth, belSalesMonth), [storeList, spbSalesMonth, belSalesMonth]);
+  const subdivScores = useMemo(() => buildSubdivScores(storeList, spbSalesMonth, belSalesMonth, {
+    spbScanning, belScanning,
+    spbJewelryItogi, belJewelryItogi,
+    spbCapsule, belCapsule,
+    spbIZ, belIZ,
+    spbPricing, belPricing,
+  }), [storeList, spbSalesMonth, belSalesMonth,
+       spbScanning, belScanning, spbJewelryItogi, belJewelryItogi,
+       spbCapsule, belCapsule, spbIZ, belIZ, spbPricing, belPricing]);
   const insights     = useMemo(() => buildInsights(storeList, subdivScores), [storeList, subdivScores]);
 
   const hasData = storeList.length > 0;
