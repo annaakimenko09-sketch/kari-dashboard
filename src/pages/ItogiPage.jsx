@@ -205,7 +205,7 @@ function exportSubdivs(items, filename) {
 const SALES_SCORE_COLS = [
   { ci: 7,  label: 'План %',        dir: 1, isPct: true  },
   { ci: 9,  label: 'ТО LFL',        dir: 1, isPct: true  },
-  { ci: 55, label: 'ЮИ %',          dir: 1, isPct: true  },
+  { ci: 55, label: 'ЮИ %',          dir: 2, isPct: true  }, // double weight
   { ci: 33, label: 'Штук в чеке',   dir: 1, isPct: false },
   { ci: 41, label: 'Доля СБП %',    dir: 1, isPct: true  }, // SPB only; null in BEL → skipped in avg
 ];
@@ -216,7 +216,7 @@ function salesScore(storeRow) {
   let sum = 0; let cnt = 0;
   for (const { ci, dir } of SALES_SCORE_COLS) {
     const v = parseFloat(storeRow[`_c${ci}`]);
-    if (!isNaN(v)) { sum += v * dir; cnt++; }
+    if (!isNaN(v)) { sum += v * dir; cnt += dir; }
   }
   return cnt ? sum / cnt : null;
 }
