@@ -15,6 +15,7 @@ import {
   Boxes,
   Tag,
   BarChart2,
+  Trophy,
 } from 'lucide-react';
 
 const BRAND = '#E91E8C';
@@ -107,6 +108,7 @@ const sections = [
     label: 'standalone',
     color: '#6b7280',
     items: [
+      { path: '/itogi',  label: 'Итоги',            icon: Trophy },
       { path: '/upload', label: 'Загрузить данные', icon: Upload },
     ],
   },

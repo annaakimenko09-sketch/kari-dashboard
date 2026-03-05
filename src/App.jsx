@@ -34,6 +34,7 @@ import SalesYuiMonthBelPage from './pages/SalesYuiMonthBelPage';
 import SalesHourSpbPage     from './pages/SalesHourSpbPage';
 import SalesHourBelPage     from './pages/SalesHourBelPage';
 import UploadPage            from './pages/UploadPage';
+import ItogiPage             from './pages/ItogiPage';
 
 export default function App() {
   return (
@@ -95,6 +96,9 @@ export default function App() {
                 <Route path="sales/yui/month/bel" element={<ErrorBoundary><SalesYuiMonthBelPage /></ErrorBoundary>} />
                 <Route path="sales/hour/spb"      element={<ErrorBoundary><SalesHourSpbPage /></ErrorBoundary>} />
                 <Route path="sales/hour/bel"      element={<ErrorBoundary><SalesHourBelPage /></ErrorBoundary>} />
+
+                {/* Итоги */}
+                <Route path="itogi"        element={<ErrorBoundary><ItogiPage /></ErrorBoundary>} />
 
                 {/* Загрузка */}
                 <Route path="upload"       element={<ErrorBoundary><UploadPage /></ErrorBoundary>} />
