@@ -49,9 +49,10 @@ function extractStoreCode(s) {
 }
 
 function storeId(row) {
-  // scanning: store = '11788 Мега', sales: _c2 = 11788 (числовой код в колонке C)
+  // scanning: store = '11778' (col 2), sales: _c3 = 11778 (col D = Магазин)
+  // _c2 = col C = 0/1 flag in sales files — do NOT use for store ID
   const v = row['Код'] || row['КодМагазина'] || row['code'] || row['id']
-    || row['store'] || row['_c2'] || '';
+    || row['store'] || row['_c3'] || '';
   const n = parseInt(String(v), 10);
   return isNaN(n) ? null : n;
 }
@@ -457,38 +458,49 @@ function buildStoreScores({
 }
 
 // Build subdivision scores using:
-// - Regulation scores: averaged from individual store regulation scores (no pre-built subdiv data)
-// - Sales scores: from sf.subdivs rows in the МЕСЯЦ sales file (pre-calculated by Excel)
+// - Regulation scores: averaged from individual store regulation scores
+// - Sales scores: from sf.subdivs rows in МЕСЯЦ file (preferred) OR averaged from store scores (fallback)
 function buildSubdivScores(storeList, spbSalesMonth, belSalesMonth) {
-  // Step 1: regulation averages by subdivision (from store list)
+  // Step 1: aggregates from store list — reg scores + raw reg values + fallback sales scores
   const regMap = {};
   for (const s of storeList) {
     const k = s.subdiv || '—';
-    if (!regMap[k]) regMap[k] = { subdiv: s.subdiv, regions: new Set(), regScores: [], scanRaws: [], yuiRaws: [], capsRaws: [], izRaws: [], pricingRaws: [] };
+    if (!regMap[k]) regMap[k] = {
+      subdiv: s.subdiv, regions: new Set(),
+      regScores: [], salesScores: [],
+      scanRaws: [], yuiRaws: [], capsRaws: [], izRaws: [], pricingRaws: [],
+      salesRawsByLabel: {},
+    };
     regMap[k].regions.add(s.region);
-    if (s.regScore !== null) regMap[k].regScores.push(s.regScore);
-    if (s.scanRaw  !== null) regMap[k].scanRaws.push(s.scanRaw);
-    if (s.yuiRaw   !== null) regMap[k].yuiRaws.push(s.yuiRaw);
-    if (s.capsRaw  !== null) regMap[k].capsRaws.push(s.capsRaw);
-    if (s.izRaw    !== null) regMap[k].izRaws.push(s.izRaw);
+    if (s.regScore   !== null) regMap[k].regScores.push(s.regScore);
+    if (s.salesScore !== null) regMap[k].salesScores.push(s.salesScore);
+    if (s.scanRaw    !== null) regMap[k].scanRaws.push(s.scanRaw);
+    if (s.yuiRaw     !== null) regMap[k].yuiRaws.push(s.yuiRaw);
+    if (s.capsRaw    !== null) regMap[k].capsRaws.push(s.capsRaw);
+    if (s.izRaw      !== null) regMap[k].izRaws.push(s.izRaw);
     if (s.pricingRaw !== null) regMap[k].pricingRaws.push(s.pricingRaw);
+    // Collect raw sales per label for fallback
+    if (s.salesRaw) {
+      for (const { label, raw } of s.salesRaw) {
+        if (raw !== null) {
+          if (!regMap[k].salesRawsByLabel[label]) regMap[k].salesRawsByLabel[label] = [];
+          regMap[k].salesRawsByLabel[label].push(raw);
+        }
+      }
+    }
   }
 
-  // Step 2: collect raw sales KPIs from sf.subdivs in МЕСЯЦ files
-  // Each subdiv row has the same column layout as store rows (_c0…_cN)
-  const salesMap = {}; // subdiv name → { rawVals: [...SALES_SCORE_COLS values], region }
+  // Step 2: collect raw sales KPIs from sf.subdivs in МЕСЯЦ files (preferred source)
+  const salesMap = {}; // subdiv name → { salesScores, salesRaws, regions }
 
   for (const sf of [spbSalesMonth, belSalesMonth]) {
-    if (!sf) continue;
+    if (!sf || !(sf.subdivs?.length)) continue;
     const region = sf.fileRegion;
-    const subdivRows = (sf.subdivs || []).filter(r => {
-      // Skip closed stores (subdivs shouldn't have store codes, but just in case)
+    const subdivRows = sf.subdivs.filter(r => {
       const code = extractStoreCode(String(r['_c3'] || r['Магазин'] || ''));
-      if (code !== null && CLOSED_STORES.has(code)) return false;
-      return true;
+      return !(code !== null && CLOSED_STORES.has(code));
     });
 
-    // Normalize sales scores for subdivs (percentile within this file's subdivs)
     const withRaw = subdivRows.map(r => ({
       subdiv: String(r['_c1'] || r['Подразделение'] || '').trim(),
       score: salesScore(r),
@@ -506,14 +518,20 @@ function buildSubdivScores(storeList, spbSalesMonth, belSalesMonth) {
     }
   }
 
-  // Step 3: merge reg + sales into final subdiv list
+  const useSalesMapForScores = Object.keys(salesMap).length > 0;
+
+  // Step 3: merge into final subdiv list
   const allKeys = new Set([...Object.keys(regMap), ...Object.keys(salesMap)]);
   return Array.from(allKeys).map(k => {
     const reg = regMap[k];
     const sal = salesMap[k];
     const regions = new Set([...(reg?.regions || []), ...(sal?.regions || [])]);
     const avgRegScore = reg?.regScores.length ? avg(...reg.regScores) : null;
-    const avgSalesScore = sal?.salesScores.length ? avg(...sal.salesScores) : null;
+
+    // Sales score: prefer file subdivs; fall back to store averages
+    const avgSalesScore = useSalesMapForScores
+      ? (sal?.salesScores.length ? avg(...sal.salesScores) : null)
+      : (reg?.salesScores.length ? avg(...reg.salesScores) : null);
 
     // Average raw regulation values
     const avgScanRaw    = reg?.scanRaws.length    ? avg(...reg.scanRaws)    : null;
@@ -522,12 +540,18 @@ function buildSubdivScores(storeList, spbSalesMonth, belSalesMonth) {
     const avgIzRaw      = reg?.izRaws.length      ? avg(...reg.izRaws)      : null;
     const avgPricingRaw = reg?.pricingRaws.length ? avg(...reg.pricingRaws) : null;
 
-    // Average raw sales values per KPI (from subdiv rows in file)
+    // Average raw sales values per KPI:
+    // prefer from file subdivs rows; fall back to averaging store sales raws
     const salesAvgRaw = SALES_SCORE_COLS.map(({ label, isPct }) => {
-      if (!sal?.salesRaws.length) return { label, raw: null, isPct };
-      const vals = sal.salesRaws
-        .map(raws => raws.find(e => e.label === label)?.raw ?? null)
-        .filter(v => v !== null);
+      if (sal?.salesRaws.length) {
+        // From file subdivs
+        const vals = sal.salesRaws
+          .map(raws => raws.find(e => e.label === label)?.raw ?? null)
+          .filter(v => v !== null);
+        return { label, raw: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null, isPct };
+      }
+      // Fallback: average from individual store sales raws
+      const vals = reg?.salesRawsByLabel[label] || [];
       return { label, raw: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null, isPct };
     });
 
