@@ -205,7 +205,6 @@ function exportSubdivs(items, filename) {
 const SALES_SCORE_COLS = [
   { ci: 7,  label: 'План %',        dir: 1, isPct: true  },
   { ci: 9,  label: 'ТО LFL',        dir: 1, isPct: true  },
-  { ci: 22, label: 'КОП',           dir: 1, isPct: true  },
   { ci: 55, label: 'ЮИ %',          dir: 1, isPct: true  },
   { ci: 33, label: 'Штук в чеке',   dir: 1, isPct: false },
 ];
