@@ -75,7 +75,8 @@ const sections = [
     label: 'Прирост регионы',
     color: '#7c3aed',
     items: [
-      { path: '/region-growth', label: 'Регионы', icon: TrendingUp },
+      { path: '/region-growth', label: 'Остатки обуви регионы', icon: TrendingUp },
+      { path: '/region-growth/sales-share', label: 'Доля продаж обуви в шт', icon: TrendingUp },
     ],
   },
   {

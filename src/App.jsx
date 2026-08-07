@@ -22,6 +22,7 @@ import PricingBelPage    from './pages/PricingBelPage';
 import FillingSpbPage    from './pages/FillingSpbPage';
 import FillingBelPage    from './pages/FillingBelPage';
 import RegionGrowthPage  from './pages/RegionGrowthPage';
+import SalesShareUnitsPage from './pages/SalesShareUnitsPage';
 import IZSpbPage            from './pages/IZSpbPage';
 import IZBelPage            from './pages/IZBelPage';
 import SalesDaySpbPage      from './pages/SalesDaySpbPage';
@@ -85,6 +86,7 @@ export default function App() {
 
                 {/* Прирост регионы */}
                 <Route path="region-growth" element={<ErrorBoundary><RegionGrowthPage /></ErrorBoundary>} />
+                <Route path="region-growth/sales-share" element={<ErrorBoundary><SalesShareUnitsPage /></ErrorBoundary>} />
 
                 {/* Наполненность обувь */}
                 <Route path="filling/spb" element={<ErrorBoundary><FillingSpbPage /></ErrorBoundary>} />

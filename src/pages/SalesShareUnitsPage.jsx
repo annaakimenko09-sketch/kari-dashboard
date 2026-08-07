@@ -1,15 +1,52 @@
 import { Fragment, useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import * as XLSX from 'xlsx-js-style';
-import { Download, ChevronDown, ChevronRight } from 'lucide-react';
+import { Download, ChevronDown, ChevronRight, ChevronUp, ArrowUpDown } from 'lucide-react';
 
-function fmtNum(v) {
+function fmtPct(v) {
   if (v === null || v === undefined) return '—';
-  return Math.round(v).toLocaleString('ru-RU');
+  return v.toLocaleString('ru-RU', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
 // Строка с раскрывающимся списком артикулов для сезона/направления
 function DetailPanel({ items, regions, colSpan }) {
+  // По умолчанию — сортировка по убыванию (от большего к меньшему) по первому региону
+  const [sortCol, setSortCol] = useState(regions[0] || null);
+  const [sortDir, setSortDir] = useState('desc');
+
+  const sortedItems = useMemo(() => {
+    if (!items || !sortCol) return items;
+    const copy = [...items];
+    copy.sort((a, b) => {
+      if (sortCol === 'article') {
+        const cmp = String(a.article).localeCompare(String(b.article), 'ru');
+        return sortDir === 'asc' ? cmp : -cmp;
+      }
+      const av = a.values[sortCol];
+      const bv = b.values[sortCol];
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      return sortDir === 'asc' ? av - bv : bv - av;
+    });
+    return copy;
+  }, [items, sortCol, sortDir]);
+
+  function handleSort(col) {
+    if (sortCol === col) {
+      setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortCol(col);
+      setSortDir('desc');
+    }
+  }
+
+  function SortIcon({ col }) {
+    if (sortCol !== col) return <ArrowUpDown size={11} className="inline text-gray-300 ml-0.5" />;
+    return sortDir === 'desc'
+      ? <ChevronDown size={12} className="inline text-blue-500 ml-0.5" />
+      : <ChevronUp size={12} className="inline text-blue-500 ml-0.5" />;
+  }
+
   if (!items || items.length === 0) {
     return (
       <tr>
@@ -22,39 +59,51 @@ function DetailPanel({ items, regions, colSpan }) {
   return (
     <tr>
       <td colSpan={colSpan} className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-        <div className="overflow-x-auto">
-          <table className="text-xs w-full" style={{ tableLayout: 'fixed' }}>
-            <colgroup>
-              <col style={{ width: '260px' }} />
-              {regions.map(r => <col key={r} style={{ width: '70px' }} />)}
-            </colgroup>
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left px-2 py-1.5 text-gray-500 font-semibold sticky left-0 z-10 bg-gray-50">Артикул</th>
+        <table className="text-xs w-full" style={{ tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: '260px' }} />
+            {regions.map(r => <col key={r} style={{ width: '70px' }} />)}
+          </colgroup>
+          <thead>
+            <tr className="border-b border-gray-200">
+              <th
+                className="text-left px-2 py-1.5 text-gray-500 font-semibold sticky left-0 z-20 bg-gray-50 cursor-pointer select-none hover:text-gray-700 border-r border-gray-200"
+                style={{ top: 37 }}
+                onClick={() => handleSort('article')}
+              >
+                Артикул<SortIcon col="article" />
+              </th>
+              {regions.map(r => (
+                <th
+                  key={r}
+                  className="text-center px-2 py-1.5 text-gray-500 font-semibold sticky z-10 bg-gray-50 cursor-pointer select-none hover:text-gray-700"
+                  style={{ top: 37 }}
+                  onClick={() => handleSort(r)}
+                >
+                  {r}<SortIcon col={r} />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedItems.map((item, i) => (
+              <tr key={i} className="group border-b border-gray-100 hover:bg-gray-100">
+                <td className="px-2 py-1 text-gray-700 truncate sticky left-0 z-10 bg-gray-50 group-hover:bg-gray-100 border-r border-gray-200" title={item.article}>{item.article}</td>
                 {regions.map(r => (
-                  <th key={r} className="text-center px-2 py-1.5 text-gray-500 font-semibold">{r}</th>
+                  <td key={r} className="px-2 py-1 text-center text-gray-700">{fmtPct(item.values[r])}</td>
                 ))}
               </tr>
-            </thead>
-            <tbody>
-              {items.map((item, i) => (
-                <tr key={i} className="group border-b border-gray-100 hover:bg-gray-100">
-                  <td className="px-2 py-1 text-gray-700 truncate sticky left-0 z-10 bg-gray-50 group-hover:bg-gray-100" title={item.article}>{item.article}</td>
-                  {regions.map(r => (
-                    <td key={r} className="px-2 py-1 text-center text-gray-700">{fmtNum(item.values[r])}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </td>
     </tr>
   );
 }
 
-export default function RegionGrowthPage() {
+export default function SalesShareUnitsPage() {
   const { regionGrowth } = useData();
+  const salesShare = regionGrowth?.salesShare || null;
   const [expanded, setExpanded] = useState(new Set());
 
   const regions = regionGrowth?.regions || [];
@@ -62,24 +111,24 @@ export default function RegionGrowthPage() {
 
   const detailsBySeason = useMemo(() => {
     const map = {};
-    if (!regionGrowth) return map;
-    for (const d of regionGrowth.details) {
+    if (!salesShare) return map;
+    for (const d of salesShare.details) {
       if (!map[d.season]) map[d.season] = [];
       map[d.season].push(d);
     }
     return map;
-  }, [regionGrowth]);
+  }, [salesShare]);
 
   const detailsBySeasonDirection = useMemo(() => {
     const map = {};
-    if (!regionGrowth) return map;
-    for (const d of regionGrowth.details) {
+    if (!salesShare) return map;
+    for (const d of salesShare.details) {
       const key = `${d.season}||${d.direction}`;
       if (!map[key]) map[key] = [];
       map[key].push(d);
     }
     return map;
-  }, [regionGrowth]);
+  }, [salesShare]);
 
   function toggle(key) {
     setExpanded(prev => {
@@ -91,7 +140,7 @@ export default function RegionGrowthPage() {
   }
 
   function exportToExcel() {
-    if (!regionGrowth) return;
+    if (!salesShare) return;
     const wb = XLSX.utils.book_new();
 
     const headerStyle = {
@@ -100,16 +149,16 @@ export default function RegionGrowthPage() {
       alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
       border: { bottom: { style: 'thin', color: { rgb: 'D1D5DB' } } },
     };
-    const cellStyle = { alignment: { horizontal: 'center', vertical: 'center' } };
+    const cellStyle = { alignment: { horizontal: 'center', vertical: 'center' }, numFmt: '0.0%' };
 
     // Лист 1: Сводная
     {
       const headers = ['Сезон', 'Направление', ...regions];
       const rows = [];
-      if (regionGrowth.grandTotal) {
-        rows.push(['Общий итог', '', ...regions.map(r => regionGrowth.grandTotal.values[r])]);
+      if (salesShare.grandTotal) {
+        rows.push(['Общий итог', '', ...regions.map(r => salesShare.grandTotal.values[r])]);
       }
-      for (const season of regionGrowth.seasons) {
+      for (const season of salesShare.seasons) {
         rows.push([season.label, 'Всего', ...regions.map(r => season.total[r])]);
         for (const dir of season.directions) {
           rows.push(['', dir.label, ...regions.map(r => dir.values[r])]);
@@ -133,7 +182,7 @@ export default function RegionGrowthPage() {
     // Лист 2: Детально
     {
       const headers = ['Сезон', 'Направление', 'Артикул', ...regions];
-      const rows = regionGrowth.details.map(d => [
+      const rows = salesShare.details.map(d => [
         d.season, d.direction || '', d.article, ...regions.map(r => d.values[r]),
       ]);
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -152,10 +201,10 @@ export default function RegionGrowthPage() {
     }
 
     const suffix = regionGrowth.title ? `_${regionGrowth.title.replace(/[^\d.]/g, '')}` : '';
-    XLSX.writeFile(wb, `Прирост_регионы${suffix}.xlsx`);
+    XLSX.writeFile(wb, `Доля_продаж_шт${suffix}.xlsx`);
   }
 
-  if (!regionGrowth) {
+  if (!regionGrowth || !salesShare) {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-gray-400 text-sm">
@@ -171,7 +220,7 @@ export default function RegionGrowthPage() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <p className="text-xs text-gray-400 mb-0.5">Прирост регионы — остатки в среднем магазине</p>
+            <p className="text-xs text-gray-400 mb-0.5">Прирост регионы — доля в продажах, шт</p>
             <p className="text-base font-bold text-gray-800">{regionGrowth.title || regionGrowth.fileName}</p>
           </div>
         </div>
@@ -180,7 +229,7 @@ export default function RegionGrowthPage() {
       {/* Table card */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 gap-3 flex-wrap">
-          <h2 className="text-sm font-semibold text-gray-700">Остатки по регионам</h2>
+          <h2 className="text-sm font-semibold text-gray-700">Доля продаж обуви в шт по регионам</h2>
           <button
             onClick={exportToExcel}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
@@ -212,7 +261,7 @@ export default function RegionGrowthPage() {
             </thead>
             <tbody>
               {/* Общий итог */}
-              {regionGrowth.grandTotal && (() => {
+              {salesShare.grandTotal && (() => {
                 const key = 'grand';
                 const isExp = expanded.has(key);
                 return [
@@ -227,15 +276,15 @@ export default function RegionGrowthPage() {
                     <td className={`px-2 py-2 text-left text-xs font-bold text-gray-900 sticky z-10 ${isExp ? 'bg-blue-50' : 'bg-white group-hover:bg-gray-50'}`} style={{ left: 32 }}>Общий итог</td>
                     {regions.map(r => (
                       <td key={r} className="px-2 py-2 text-center text-xs font-bold text-gray-900">
-                        {fmtNum(regionGrowth.grandTotal.values[r])}
+                        {fmtPct(salesShare.grandTotal.values[r])}
                       </td>
                     ))}
                   </tr>,
-                  isExp && <DetailPanel key={`${key}-d`} items={regionGrowth.details} regions={regions} colSpan={colSpan} />,
+                  isExp && <DetailPanel key={`${key}-d`} items={salesShare.details} regions={regions} colSpan={colSpan} />,
                 ];
               })()}
 
-              {regionGrowth.seasons.map(season => {
+              {salesShare.seasons.map(season => {
                 const seasonKey = `season:${season.label}`;
                 const isSeasonExp = expanded.has(seasonKey);
                 return (
@@ -250,7 +299,7 @@ export default function RegionGrowthPage() {
                       <td className={`px-2 py-2 text-left text-xs font-semibold text-gray-800 sticky z-10 ${isSeasonExp ? 'bg-blue-50' : 'bg-white group-hover:bg-gray-50'}`} style={{ left: 32 }}>{season.label}</td>
                       {regions.map(r => (
                         <td key={r} className="px-2 py-2 text-center text-xs font-semibold text-gray-800">
-                          {fmtNum(season.total[r])}
+                          {fmtPct(season.total[r])}
                         </td>
                       ))}
                     </tr>
@@ -277,7 +326,7 @@ export default function RegionGrowthPage() {
                             <td className={`px-2 py-2 pl-6 text-left text-xs text-gray-600 sticky z-10 ${isDirExp ? 'bg-blue-50' : 'bg-white group-hover:bg-gray-50'}`} style={{ left: 32 }}>{dir.label}</td>
                             {regions.map(r => (
                               <td key={r} className="px-2 py-2 text-center text-xs text-gray-600">
-                                {fmtNum(dir.values[r])}
+                                {fmtPct(dir.values[r])}
                               </td>
                             ))}
                           </tr>
