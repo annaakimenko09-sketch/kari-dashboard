@@ -16,7 +16,10 @@ import {
   Tag,
   BarChart2,
   Trophy,
+  Server,
+  TrendingUp,
 } from 'lucide-react';
+import { useData } from '../context/DataContext';
 
 const BRAND = '#E91E8C';
 
@@ -27,13 +30,17 @@ const sections = [
     items: [
       { path: '/sales/day/spb',       label: 'День СПБ',       icon: BarChart2 },
       { path: '/sales/month/spb',     label: 'Месяц СПБ',      icon: BarChart2 },
+      { path: '/sales/year/spb',      label: 'Год СПБ',        icon: BarChart2 },
       { path: '/sales/yui/day/spb',   label: 'День ЮИ СПБ',    icon: BarChart2 },
       { path: '/sales/yui/month/spb', label: 'Месяц ЮИ СПБ',   icon: BarChart2 },
+      { path: '/sales/yui/year/spb',  label: 'Год ЮИ СПБ',     icon: BarChart2 },
       { path: '/sales/hour/spb',      label: 'По часу СПБ',     icon: BarChart2 },
       { path: '/sales/day/bel',       label: 'День БЕЛ',       icon: BarChart2 },
       { path: '/sales/month/bel',     label: 'Месяц БЕЛ',      icon: BarChart2 },
+      { path: '/sales/year/bel',      label: 'Год БЕЛ',        icon: BarChart2 },
       { path: '/sales/yui/day/bel',   label: 'День ЮИ БЕЛ',    icon: BarChart2 },
       { path: '/sales/yui/month/bel', label: 'Месяц ЮИ БЕЛ',   icon: BarChart2 },
+      { path: '/sales/yui/year/bel',  label: 'Год ЮИ БЕЛ',     icon: BarChart2 },
       { path: '/sales/hour/bel',      label: 'По часу БЕЛ',     icon: BarChart2 },
     ],
   },
@@ -62,6 +69,13 @@ const sections = [
       { path: '/kids',         label: 'Дашборд',          icon: LayoutDashboard },
       { path: '/kids/vyvoz',   label: 'Вывозы',           icon: Truck },
       { path: '/kids/control', label: 'Контроль',         icon: AlertCircle },
+    ],
+  },
+  {
+    label: 'Прирост регионы',
+    color: '#7c3aed',
+    items: [
+      { path: '/region-growth', label: 'Регионы', icon: TrendingUp },
     ],
   },
   {
@@ -108,18 +122,20 @@ const sections = [
     label: 'standalone',
     color: '#6b7280',
     items: [
-      { path: '/itogi',  label: 'Итоги',            icon: Trophy },
-      { path: '/upload', label: 'Загрузить данные', icon: Upload },
+      { path: '/itogi',         label: 'Итоги',                icon: Trophy },
+      { path: '/upload',        label: 'Загрузить данные',      icon: Upload },
+      { path: '/server-status', label: 'Синхронизация сервера', icon: Server },
     ],
   },
 ];
 
 // Which section labels to show as expandable groups (not standalone items)
-const GROUP_LABELS = ['Продажи', 'Адресное ЮИ', 'Вывозы на МП Обувь', 'Вывозы на МП КИДС', 'Наполненность Обувь', 'Адресное Обувь', 'Адресное ИЗ', 'Цены на полупарах', 'Адресное Капсулы'];
+const GROUP_LABELS = ['Продажи', 'Адресное ЮИ', 'Вывозы на МП Обувь', 'Вывозы на МП КИДС', 'Прирост регионы', 'Наполненность Обувь', 'Адресное Обувь', 'Адресное ИЗ', 'Цены на полупарах', 'Адресное Капсулы'];
 
 export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) {
+  const { serverMode, serverStatus } = useData();
   // Track expanded groups
-  const [expanded, setExpanded] = useState({ 'Продажи': true, 'Адресное ЮИ': true, 'Вывозы на МП Обувь': true, 'Вывозы на МП КИДС': true, 'Наполненность Обувь': true, 'Адресное Обувь': true, 'Адресное ИЗ': true, 'Цены на полупарах': true, 'Адресное Капсулы': true });
+  const [expanded, setExpanded] = useState({ 'Продажи': true, 'Адресное ЮИ': true, 'Вывозы на МП Обувь': true, 'Вывозы на МП КИДС': true, 'Прирост регионы': true, 'Наполненность Обувь': true, 'Адресное Обувь': true, 'Адресное ИЗ': true, 'Цены на полупарах': true, 'Адресное Капсулы': true });
 
   function toggleGroup(label) {
     setExpanded(prev => ({ ...prev, [label]: !prev[label] }));
@@ -305,11 +321,34 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
         </nav>
 
         {/* Footer */}
-        {!isCollapsed && (
-          <div className="px-4 py-3 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>KARI Dashboard v2.1</p>
-          </div>
-        )}
+        <div className="px-4 py-3 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          {!isCollapsed ? (
+            <div className="flex items-center justify-between">
+              <p className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>KARI Dashboard v2.1</p>
+              {serverMode && (
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: serverStatus.connected ? '#10b981' : '#ef4444' }}
+                  />
+                  <span className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                    {serverStatus.connected ? 'Сервер' : 'Нет связи'}
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            serverMode && (
+              <div className="flex justify-center">
+                <span
+                  className="w-2 h-2 rounded-full"
+                  title={serverStatus.connected ? 'Сервер подключён' : 'Сервер недоступен'}
+                  style={{ backgroundColor: serverStatus.connected ? '#10b981' : '#ef4444' }}
+                />
+              </div>
+            )
+          )}
+        </div>
       </aside>
     </>
   );

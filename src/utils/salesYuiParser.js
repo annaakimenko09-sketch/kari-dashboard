@@ -90,6 +90,7 @@ function detectPeriod(name) {
   const n = name.toUpperCase();
   if (n.startsWith('ДЕНЬ') || n.includes('ДЕНЬ_') || n.includes('DAY')) return 'ДЕНЬ';
   if (n.startsWith('МЕСЯЦ') || n.includes('МЕСЯЦ_') || n.includes('MONTH')) return 'МЕСЯЦ';
+  if (n.startsWith('ГОД') || n.includes('ГОД_') || n.includes('YEAR')) return 'ГОД';
   return 'ДЕНЬ';
 }
 

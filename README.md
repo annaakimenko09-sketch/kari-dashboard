@@ -1,16 +1,99 @@
-# React + Vite
+# KARI Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Дашборд аналитики продаж для регионов СПБ и БЕЛ.
 
-Currently, two official plugins are available:
+## Запуск
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Запустить файл `ЗАПУСК.command` на рабочем столе, или:
 
-## React Compiler
+```bash
+npm install
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Открыть в браузере: http://localhost:5173
 
-## Expanding the ESLint configuration
+## Деплой на Vercel
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm run build
+vercel --prod --yes
+```
+
+Адрес: https://kari-dashboard.vercel.app
+
+---
+
+## Какие файлы загружать
+
+Перейти на страницу **«Загрузить данные»** и загрузить нужные Excel-файлы (.xlsx).
+Файлы определяются **автоматически по имени**.
+
+### Продажи (раздел «Продажи»)
+
+| Файл | Вкладка в дашборде |
+|------|--------------------|
+| `ДЕНЬ_СПБ *.xlsx` | День СПБ |
+| `ДЕНЬ_БЕЛ *.xlsx` | День БЕЛ |
+| `МЕСЯЦ_СПБ *.xlsx` | Месяц СПБ |
+| `МЕСЯЦ_БЕЛ *.xlsx` | Месяц БЕЛ |
+| `ГОД_СПБ *.xlsx` | Год СПБ |
+| `ГОД_БЕЛ *.xlsx` | Год БЕЛ |
+| `ДЕНЬ *.xlsx` (без СПБ/БЕЛ) | День ЮИ СПБ |
+| `МЕСЯЦ *.xlsx` (без СПБ/БЕЛ) | Месяц ЮИ БЕЛ |
+| `*по часу продаж* СПБ *.xlsx` | По часу СПБ |
+| `*по часу продаж* БЕЛ *.xlsx` | По часу БЕЛ |
+
+> Файлы Год должны содержать лист `Лист1` или `Рег` с данными в том же формате, что и Месяц/День.
+
+### Приёмка (раздел «Адресное Обувь»)
+
+| Файл | Вкладка |
+|------|---------|
+| `Нет сканирования, Неделя-* СПБ.xlsx` | СПБ |
+| `Нет сканирования, Неделя-* БЕЛ.xlsx` | БЕЛ |
+
+### Прочие разделы
+
+| Файл | Раздел |
+|------|--------|
+| `*ЮИ итоги*.xlsx` | Адресное ЮИ |
+| `*Невыставленный товар*.xlsx` | Адресное ЮИ |
+| `*капсул*.xlsx` | Адресное Капсулы |
+| `*полупарк* / *переоценк*.xlsx` | Цены на полупарах |
+| `*Наполненность*.xlsx` | Наполненность Обувь |
+| `*Интернет заказ*.xlsx` | Адресное ИЗ |
+| `Отчет ДР Месяц*.xlsx` | Вывозы на МП Обувь / КИДС |
+
+---
+
+## Структура проекта
+
+```
+src/
+├── components/
+│   ├── Layout.jsx       — шапка и обёртка
+│   └── Sidebar.jsx      — боковое меню
+├── context/
+│   └── DataContext.jsx  — глобальное состояние, загрузка файлов
+├── pages/
+│   ├── SalesDaySpbPage.jsx      — День СПБ
+│   ├── SalesDayBelPage.jsx      — День БЕЛ
+│   ├── SalesMonthSpbPage.jsx    — Месяц СПБ
+│   ├── SalesMonthBelPage.jsx    — Месяц БЕЛ
+│   ├── SalesYearSpbPage.jsx     — Год СПБ
+│   ├── SalesYearBelPage.jsx     — Год БЕЛ
+│   ├── SalesPage.jsx            — общий шаблон отчётов продаж
+│   └── UploadPage.jsx           — загрузка файлов
+└── utils/
+    ├── salesParser.js           — парсер файлов ДЕНЬ/МЕСЯЦ/ГОД
+    ├── salesHourParser.js       — парсер файлов по часу
+    ├── salesYuiParser.js        — парсер ЮИ
+    ├── scanningParser.js        — парсер приёмки
+    ├── jewelryParser.js         — парсер ЮИ итоги
+    ├── capsuleParser.js         — парсер капсул
+    ├── fillingParser.js         — парсер наполненности
+    ├── pricingParser.js         — парсер цен на полупарах
+    ├── izParser.js              — парсер ИЗ
+    └── excelParser.js           — парсер файлов вывозов
+```

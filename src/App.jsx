@@ -21,20 +21,26 @@ import PricingSpbPage    from './pages/PricingSpbPage';
 import PricingBelPage    from './pages/PricingBelPage';
 import FillingSpbPage    from './pages/FillingSpbPage';
 import FillingBelPage    from './pages/FillingBelPage';
+import RegionGrowthPage  from './pages/RegionGrowthPage';
 import IZSpbPage            from './pages/IZSpbPage';
 import IZBelPage            from './pages/IZBelPage';
 import SalesDaySpbPage      from './pages/SalesDaySpbPage';
 import SalesDayBelPage      from './pages/SalesDayBelPage';
 import SalesMonthSpbPage    from './pages/SalesMonthSpbPage';
 import SalesMonthBelPage    from './pages/SalesMonthBelPage';
+import SalesYearSpbPage     from './pages/SalesYearSpbPage';
+import SalesYearBelPage     from './pages/SalesYearBelPage';
 import SalesYuiDaySpbPage   from './pages/SalesYuiDaySpbPage';
 import SalesYuiDayBelPage   from './pages/SalesYuiDayBelPage';
 import SalesYuiMonthSpbPage from './pages/SalesYuiMonthSpbPage';
 import SalesYuiMonthBelPage from './pages/SalesYuiMonthBelPage';
+import SalesYuiYearSpbPage  from './pages/SalesYuiYearSpbPage';
+import SalesYuiYearBelPage  from './pages/SalesYuiYearBelPage';
 import SalesHourSpbPage     from './pages/SalesHourSpbPage';
 import SalesHourBelPage     from './pages/SalesHourBelPage';
 import UploadPage            from './pages/UploadPage';
 import ItogiPage             from './pages/ItogiPage';
+import ServerStatusPage      from './pages/ServerStatusPage';
 
 export default function App() {
   return (
@@ -77,6 +83,9 @@ export default function App() {
                 <Route path="pricing/spb" element={<ErrorBoundary><PricingSpbPage /></ErrorBoundary>} />
                 <Route path="pricing/bel" element={<ErrorBoundary><PricingBelPage /></ErrorBoundary>} />
 
+                {/* Прирост регионы */}
+                <Route path="region-growth" element={<ErrorBoundary><RegionGrowthPage /></ErrorBoundary>} />
+
                 {/* Наполненность обувь */}
                 <Route path="filling/spb" element={<ErrorBoundary><FillingSpbPage /></ErrorBoundary>} />
                 <Route path="filling/bel" element={<ErrorBoundary><FillingBelPage /></ErrorBoundary>} />
@@ -90,10 +99,14 @@ export default function App() {
                 <Route path="sales/day/bel"       element={<ErrorBoundary><SalesDayBelPage /></ErrorBoundary>} />
                 <Route path="sales/month/spb"     element={<ErrorBoundary><SalesMonthSpbPage /></ErrorBoundary>} />
                 <Route path="sales/month/bel"     element={<ErrorBoundary><SalesMonthBelPage /></ErrorBoundary>} />
+                <Route path="sales/year/spb"      element={<ErrorBoundary><SalesYearSpbPage /></ErrorBoundary>} />
+                <Route path="sales/year/bel"      element={<ErrorBoundary><SalesYearBelPage /></ErrorBoundary>} />
                 <Route path="sales/yui/day/spb"   element={<ErrorBoundary><SalesYuiDaySpbPage /></ErrorBoundary>} />
                 <Route path="sales/yui/day/bel"   element={<ErrorBoundary><SalesYuiDayBelPage /></ErrorBoundary>} />
                 <Route path="sales/yui/month/spb" element={<ErrorBoundary><SalesYuiMonthSpbPage /></ErrorBoundary>} />
                 <Route path="sales/yui/month/bel" element={<ErrorBoundary><SalesYuiMonthBelPage /></ErrorBoundary>} />
+                <Route path="sales/yui/year/spb"  element={<ErrorBoundary><SalesYuiYearSpbPage /></ErrorBoundary>} />
+                <Route path="sales/yui/year/bel"  element={<ErrorBoundary><SalesYuiYearBelPage /></ErrorBoundary>} />
                 <Route path="sales/hour/spb"      element={<ErrorBoundary><SalesHourSpbPage /></ErrorBoundary>} />
                 <Route path="sales/hour/bel"      element={<ErrorBoundary><SalesHourBelPage /></ErrorBoundary>} />
 
@@ -101,7 +114,8 @@ export default function App() {
                 <Route path="itogi"        element={<ErrorBoundary><ItogiPage /></ErrorBoundary>} />
 
                 {/* Загрузка */}
-                <Route path="upload"       element={<ErrorBoundary><UploadPage /></ErrorBoundary>} />
+                <Route path="upload"         element={<ErrorBoundary><UploadPage /></ErrorBoundary>} />
+                <Route path="server-status"  element={<ErrorBoundary><ServerStatusPage /></ErrorBoundary>} />
               </Route>
             </Routes>
           </ErrorBoundary>

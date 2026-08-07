@@ -97,6 +97,7 @@ function detectPeriod(name) {
   const n = name.toUpperCase();
   if (n.includes('ДЕНЬ') || n.includes('DAY') || n.startsWith('ДЕНЬ')) return 'ДЕНЬ';
   if (n.includes('МЕСЯЦ') || n.includes('MONTH')) return 'МЕСЯЦ';
+  if (n.includes('ГОД') || n.includes('YEAR')) return 'ГОД';
   return 'ДЕНЬ';
 }
 
@@ -198,8 +199,8 @@ export async function parseSalesFiles(fileList) {
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer, { type: 'array' });
 
-    const sheetName = 'Рег';
-    if (!wb.SheetNames.includes(sheetName)) continue;
+    const sheetName = ['Рег', 'Лист1', 'Sheet1'].find(n => wb.SheetNames.includes(n));
+    if (!sheetName) continue;
 
     const ws = wb.Sheets[sheetName];
     const parsed = parseRegSheet(ws);
